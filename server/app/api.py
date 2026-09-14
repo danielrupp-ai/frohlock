@@ -75,9 +75,18 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
     with db.tx() as c:
         c.execute(
             """UPDATE devices SET last_seen=?, app_version=?, reported_config_version=?,
-                   locked=?, lock_reason=?, trusted_time_age=?, pin_failures=? WHERE id=?""",
+                   locked=?, lock_reason=?, trusted_time_age=?, pin_failures=?,
+                   usage_today=?, budget_minutes=? WHERE id=?""",
             (int(time.time()), hb.appVersion, hb.configVersion, 1 if hb.currentlyLocked else 0,
-             hb.lockReason, hb.trustedTimeAgeSeconds, hb.pinFailuresToday, device_id),
+             hb.lockReason, hb.trustedTimeAgeSeconds, hb.pinFailuresToday,
+             hb.usageMinutesToday, hb.dailyBudgetMinutes, device_id),
+        )
+        # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
+        day = hb.usageDay or time.strftime("%Y-%m-%d")
+        c.execute(
+            """INSERT INTO usage_daily(device_id, day, minutes) VALUES (?,?,?)
+               ON CONFLICT(device_id, day) DO UPDATE SET minutes=MAX(minutes, excluded.minutes)""",
+            (device_id, day, hb.usageMinutesToday),
         )
     return {"ok": True}
 

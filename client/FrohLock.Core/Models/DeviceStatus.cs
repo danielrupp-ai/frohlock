@@ -12,4 +12,9 @@ public sealed class DeviceStatus
     public string LockReason { get; set; } = "";
     public int PinFailuresToday { get; set; }
     public long LastBootUnix { get; set; }
+
+    // Tages-Gesamtnutzung / Limit.
+    public int UsageMinutesToday { get; set; }
+    public int DailyBudgetMinutes { get; set; }
+    public string UsageDay { get; set; } = "";
 }

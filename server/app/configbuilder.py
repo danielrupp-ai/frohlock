@@ -53,7 +53,7 @@ def build_full_config(device_id: str) -> dict | None:
         "pinIterations": draft.get("pinIterations", 210_000),
         "serverBaseUrl": settings.public_base_url,
         "tlsSpkiPins": settings.tls_pins,
-        "serverPollSeconds": 60,
+        "serverPollSeconds": 30,
         "maxTrustedTimeStalenessMinutes": draft.get("maxTrustedTimeStalenessMinutes", 720),
         "failSecureLocked": True,
     }

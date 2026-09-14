@@ -66,11 +66,20 @@ CREATE TABLE IF NOT EXISTS reset_tokens (
     expires_at INTEGER NOT NULL,
     used INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS usage_daily (
+    device_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    minutes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (device_id, day)
+);
 """
 
 # Leichte Migrationen für bestehende DBs.
 MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN reset_email TEXT",
+    "ALTER TABLE devices ADD COLUMN usage_today INTEGER DEFAULT 0",
+    "ALTER TABLE devices ADD COLUMN budget_minutes INTEGER DEFAULT 0",
 ]
 
 

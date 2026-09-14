@@ -98,10 +98,26 @@ def device_detail(request: Request, device_id: str):
         w["endHHMM"] = _hhmm(w.get("endMinute", 0))
         w["dayLabels"] = ", ".join(lbl for d, lbl in DAYS if d in w.get("days", [])) or "täglich"
     audit_rows = db.query("SELECT * FROM audit WHERE device_id=? ORDER BY ts DESC LIMIT 30", (device_id,))
+
+    # Nutzung: letzte 7 Tage (0 auffüllen, wo nichts gemeldet).
+    import datetime
+    rows = db.query("SELECT day, minutes FROM usage_daily WHERE device_id=?", (device_id,))
+    by_day = {r["day"]: r["minutes"] for r in rows}
+    today = datetime.date.today()
+    usage_week = []
+    for i in range(6, -1, -1):
+        d = today - datetime.timedelta(days=i)
+        key = d.strftime("%Y-%m-%d")
+        usage_week.append({"day": d.strftime("%a %d.%m."), "minutes": by_day.get(key, 0)})
+    max_min = max([u["minutes"] for u in usage_week] + [1])
+    budget = draft.get("dailyBudgetMinutes", 0)
+
     return templates.TemplateResponse("device.html", {
         "request": request, "dev": dev, "version": version, "draft": draft,
         "windows": windows, "days": DAYS, "audit": audit_rows, "now": int(time.time()),
         "has_pin": bool(draft.get("pinHash")),
+        "usage_week": usage_week, "usage_max": max_min, "budget": budget,
+        "usage_today": dev["usage_today"] if "usage_today" in dev.keys() else 0,
     })
 
 

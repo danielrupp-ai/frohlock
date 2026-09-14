@@ -161,6 +161,37 @@ def test_pin_reset_by_email_flow(client):
     assert client.get(f"/reset/{tok}").status_code == 200  # zeigt "ungültig"-Seite
 
 
+def test_usage_tracking_and_device_page(client):
+    _admin_login(client)
+    client.post("/admin/pairing", data={"device_name": "Nutzungs-Laptop"}, follow_redirects=False)
+    import app.db as dbmod
+    code = dbmod.query("SELECT code FROM pairing_codes")[0]["code"]
+    dev = client.post("/devices/register", json={"pairingCode": code, "deviceName": "Nutzungs-Laptop"}).json()
+    device_id, token = dev["deviceId"], dev["token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # Config mit Tageslimit anlegen (über Admin-Einstellungen).
+    client.post(f"/devices/{device_id}/config-draft",
+                json={"windows": [], "pinHash": "eA==", "pinSalt": "eA==", "dailyBudgetMinutes": 120},
+                headers=auth)
+
+    # Heartbeat meldet Nutzung.
+    hb = {"deviceId": device_id, "appVersion": "0.4.0", "configVersion": 1,
+          "currentlyLocked": False, "usageMinutesToday": 47, "dailyBudgetMinutes": 120,
+          "usageDay": "2026-09-14"}
+    assert client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth).status_code == 200
+
+    # Historie gespeichert (max je Tag)
+    row = dbmod.query_one("SELECT minutes FROM usage_daily WHERE device_id=? AND day=?", (device_id, "2026-09-14"))
+    assert row and row["minutes"] == 47
+
+    # Admin-Detailseite rendert (kein Template-Fehler) und zeigt die Nutzung
+    r = client.get(f"/admin/devices/{device_id}")
+    assert r.status_code == 200
+    assert "47 min" in r.text
+    assert "Tageslimit" in r.text
+
+
 def configbuilder_version(device_id):
     from app.configbuilder import current_version
     return current_version(device_id)

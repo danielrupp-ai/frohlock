@@ -45,3 +45,6 @@ class HeartbeatIn(BaseModel):
     lockReason: str = ""
     pinFailuresToday: int = 0
     lastBootUnix: int = 0
+    usageMinutesToday: int = 0
+    dailyBudgetMinutes: int = 0
+    usageDay: str = ""

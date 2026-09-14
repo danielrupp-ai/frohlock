@@ -14,6 +14,10 @@ public sealed class RuntimeState
     public string PinFailureDay { get; set; } = ""; // yyyy-MM-dd zur Tagesrückstellung
     public long LastBootUnix { get; set; }
 
+    // Tages-Gesamtnutzung (für optionales Tageslimit).
+    public string UsageDay { get; set; } = "";       // yyyy-MM-dd (Vertrauenszeit, lokal)
+    public long UsageSecondsToday { get; set; }
+
     public static RuntimeState Load()
     {
         try
@@ -43,5 +47,20 @@ public sealed class RuntimeState
         var day = trustedNow.ToString("yyyy-MM-dd");
         if (PinFailureDay != day) { PinFailureDay = day; PinFailuresToday = 0; }
         PinFailuresToday++;
+    }
+
+    /// <summary>Zählt genutzte Sekunden für den aktuellen (Vertrauens-)Tag; setzt bei Tageswechsel zurück.</summary>
+    public void AddUsage(DateTime trustedLocalNow, int seconds)
+    {
+        var day = trustedLocalNow.ToString("yyyy-MM-dd");
+        if (UsageDay != day) { UsageDay = day; UsageSecondsToday = 0; }
+        UsageSecondsToday += seconds;
+    }
+
+    public int UsageMinutesToday(DateTime trustedLocalNow)
+    {
+        var day = trustedLocalNow.ToString("yyyy-MM-dd");
+        if (UsageDay != day) return 0;
+        return (int)(UsageSecondsToday / 60);
     }
 }

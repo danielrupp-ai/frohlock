@@ -60,7 +60,23 @@ public sealed class EnforcementController
                 ? DateTimeOffset.FromUnixTimeSeconds(_state.UnlockUntilUnix).LocalDateTime
                 : null;
 
-            return _engine.Decide(localNow, age, unlockUntilLocal);
+            var baseDec = _engine.Decide(localNow, age, unlockUntilLocal);
+
+            // Optionales Tages-Gesamtlimit (reine Logik in BudgetPolicy).
+            bool graceActive = unlockUntilLocal is { } u && localNow < u;
+            return BudgetPolicy.Apply(baseDec, _config.DailyBudgetMinutes,
+                _state.UsageMinutesToday(localNow), graceActive,
+                unlockUntilLocal?.ToString("HH:mm"));
+        }
+    }
+
+    /// <summary>Zählt genutzte Zeit (nur aufrufen, wenn Gerät nutzbar + Kind angemeldet).</summary>
+    public void AccrueUsage(int seconds)
+    {
+        lock (_gate)
+        {
+            if (_config is null) return;
+            _state.AddUsage(_clock.UtcNow.ToLocalTime(), seconds);
         }
     }
 
@@ -102,7 +118,18 @@ public sealed class EnforcementController
             if (_config is null || _engine is null) return -1;
             if (_clock.Age > TimeSpan.FromMinutes(_config.MaxTrustedTimeStalenessMinutes)) return -1;
             var localNow = _clock.UtcNow.ToLocalTime();
-            return _engine.MinutesUntilNextLockStart(localNow);
+
+            int schedMin = _engine.MinutesUntilNextLockStart(localNow); // -1 = keine/schon Sperrzeit
+            int budgetMin = -1;
+            if (_config.DailyBudgetMinutes > 0)
+            {
+                int rem = _config.DailyBudgetMinutes - _state.UsageMinutesToday(localNow);
+                budgetMin = rem > 0 ? rem : 0;
+            }
+            // Kleineren nicht-negativen Wert nehmen (was zuerst sperrt).
+            if (schedMin < 0) return budgetMin;
+            if (budgetMin < 0) return schedMin;
+            return Math.Min(schedMin, budgetMin);
         }
     }
 
@@ -135,6 +162,7 @@ public sealed class EnforcementController
         {
             var d = Decide();
             var age = _clock.Age;
+            var localNow = _clock.UtcNow.ToLocalTime();
             return new DeviceStatus
             {
                 DeviceId = _config?.DeviceId ?? "",
@@ -145,7 +173,10 @@ public sealed class EnforcementController
                 TrustedTimeAgeSeconds = age == TimeSpan.MaxValue ? -1 : (long)age.TotalSeconds,
                 LockReason = d.Reason,
                 PinFailuresToday = _state.PinFailuresToday,
-                LastBootUnix = _state.LastBootUnix
+                LastBootUnix = _state.LastBootUnix,
+                UsageMinutesToday = _state.UsageMinutesToday(localNow),
+                DailyBudgetMinutes = _config?.DailyBudgetMinutes ?? 0,
+                UsageDay = localNow.ToString("yyyy-MM-dd")
             };
         }
     }

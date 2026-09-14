@@ -69,11 +69,14 @@
     <h2 style="margin-top:18px">Einstellungen</h2>
     <form method="post" action="/admin/devices/{{ dev['id'] }}/settings">
       <div class="row">
+        <label class="muted">Tageslimit gesamt (min, 0 = aus)
+          <input name="daily_budget" type="number" min="0" value="{{ draft.get('dailyBudgetMinutes', 0) }}" style="width:90px"></label>
         <label class="muted">Entsperrdauer (min)
           <input name="unlock_grace" type="number" value="{{ draft.get('unlockGraceMinutes', 60) }}" style="width:80px"></label>
         <label class="muted">Max. Zeit-Alter (min)
           <input name="max_stale" type="number" value="{{ draft.get('maxTrustedTimeStalenessMinutes', 720) }}" style="width:90px"></label>
       </div>
+      <p class="muted" style="margin:6px 0 0">Beispiel: 120 = max. 2 Stunden Gesamtnutzung pro Tag (zusätzlich zu den Sperrzeiten).</p>
       <button style="margin-top:10px" type="submit">Speichern</button>
     </form>
 
@@ -99,6 +102,29 @@
 </div>
 
 <div class="card">
+  <h2>Bildschirmzeit</h2>
+  <div class="row" style="align-items:baseline">
+    <div style="font-size:30px;font-weight:700">{{ usage_today }} min</div>
+    <div class="muted">heute genutzt{% if budget and budget > 0 %} · Limit {{ budget }} min ({{ (budget // 60) }}:{{ '%02d' % (budget % 60) }} h){% else %} · kein Tageslimit{% endif %}</div>
+  </div>
+  {% if budget and budget > 0 %}
+  <div style="background:rgba(255,255,255,.1);border-radius:8px;height:14px;overflow:hidden;margin:8px 0 16px;max-width:420px">
+    <div style="height:100%;width:{{ [100, (usage_today * 100 // budget)] | min }}%;background:{% if usage_today >= budget %}#c62828{% elif usage_today * 100 // budget > 80 %}#f9a825{% else %}#43a047{% endif %}"></div>
+  </div>
+  {% endif %}
+  <h3 style="margin:6px 0 8px">Letzte 7 Tage</h3>
+  <div style="display:flex;gap:10px;align-items:flex-end;height:120px">
+    {% for u in usage_week %}
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end">
+      <div class="muted" style="font-size:11px">{{ u.minutes }}m</div>
+      <div title="{{ u.minutes }} min" style="width:70%;border-radius:6px 6px 0 0;background:#3457b4;height:{{ [4, (u.minutes * 90 // usage_max)] | max }}px"></div>
+      <div class="muted" style="font-size:10px;text-align:center">{{ u.day }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
   <h2>Verlauf</h2>
   <table>
     {% for a in audit %}
@@ -110,4 +136,13 @@
     <button class="danger" type="submit">Gerät aus Brücke entfernen</button>
   </form>
 </div>
+
+<script>
+  // Live-Ansicht: alle 30 s aktualisieren, aber nicht während man ein Feld bearbeitet.
+  setInterval(function () {
+    var a = document.activeElement;
+    var editing = a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA');
+    if (!editing) location.reload();
+  }, 30000);
+</script>
 {% endblock %}

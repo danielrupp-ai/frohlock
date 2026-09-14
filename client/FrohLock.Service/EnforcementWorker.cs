@@ -32,9 +32,11 @@ public sealed class EnforcementWorker : BackgroundService
     private static readonly string AppVersion =
         Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
 
+    private const int TickSeconds = 5;
     private DateTime _lastServerPollUtc = DateTime.MinValue;
     private DateTime _lastTimeSyncAttemptUtc = DateTime.MinValue;
     private DateTime _lastAgentCheckUtc = DateTime.MinValue;
+    private DateTime _lastUsageSaveUtc = DateTime.MinValue;
 
     public EnforcementWorker(EnforcementController controller, SignedConfigStore configStore,
         TrustedTimeProvider time, RsaSignatureVerifier verifier, AuditLog audit, RuntimeState state,
@@ -83,6 +85,19 @@ public sealed class EnforcementWorker : BackgroundService
                     _lastAgentCheckUtc = now;
                     WatchdogAgent();
                 }
+
+                // Tages-Nutzung zählen: nur wenn Kind angemeldet UND Gerät gerade nutzbar.
+                if (SessionLauncher.HasActiveUserSession()
+                    && _controller.AgentSilence < TimeSpan.FromSeconds(45)
+                    && !_controller.Decide().IsLocked)
+                {
+                    _controller.AccrueUsage(TickSeconds);
+                }
+                if ((now - _lastUsageSaveUtc) > TimeSpan.FromSeconds(30))
+                {
+                    _lastUsageSaveUtc = now;
+                    _state.Save();
+                }
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
@@ -90,7 +105,7 @@ public sealed class EnforcementWorker : BackgroundService
                 _log.LogWarning(ex, "Worker-Tick Fehler");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(5), ct).ContinueWith(_ => { }).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(TickSeconds), ct).ContinueWith(_ => { }).ConfigureAwait(false);
         }
     }
 
