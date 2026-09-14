@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Geräte</h1>
+  {% if devices %}
+  <table>
+    <tr><th>Name</th><th>Status</th><th>Version</th><th>Zuletzt gesehen</th><th></th></tr>
+    {% for d in devices %}
+    <tr>
+      <td>{{ d["name"] }}</td>
+      <td>
+        {% if not d["last_seen"] or now - d["last_seen"] > 300 %}
+          <span class="badge off">offline</span>
+        {% elif d["locked"] %}
+          <span class="badge locked">gesperrt</span>
+        {% else %}
+          <span class="badge open">frei</span>
+        {% endif %}
+      </td>
+      <td class="muted">{{ d["app_version"] or "–" }}</td>
+      <td class="muted">
+        {% if d["last_seen"] %}vor {{ ((now - d["last_seen"]) // 60) }} min{% else %}nie{% endif %}
+      </td>
+      <td><a class="btn" href="/admin/devices/{{ d['id'] }}"><button class="secondary">Öffnen</button></a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Noch keine Geräte gekoppelt. Erzeuge unten einen Kopplungscode und gib ihn beim Setup auf dem Laptop ein.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Neues Gerät koppeln</h2>
+  <form class="row" method="post" action="/admin/pairing">
+    <input name="device_name" placeholder="z. B. Laptop Kind 1">
+    <button type="submit">Kopplungscode erzeugen</button>
+  </form>
+  {% if codes %}
+  <table style="margin-top:14px">
+    <tr><th>Code</th><th>Für</th><th>Gültig noch</th></tr>
+    {% for c in codes %}
+    <tr>
+      <td><code class="code">{{ c["code"] }}</code></td>
+      <td>{{ c["device_name"] }}</td>
+      <td class="muted">{{ ((c["expires_at"] - now) // 3600) }} h</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

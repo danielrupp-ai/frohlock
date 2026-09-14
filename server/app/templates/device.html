@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <h1 style="margin:0">{{ dev["name"] }}</h1>
+    <div>
+      {% if dev["locked"] %}<span class="badge locked">gesperrt</span>{% else %}<span class="badge open">frei</span>{% endif %}
+    </div>
+  </div>
+  <p class="muted">
+    Config-Version {{ version }} · gemeldet {{ dev["reported_config_version"] }} ·
+    App {{ dev["app_version"] or "–" }} ·
+    {% if dev["last_seen"] %}zuletzt vor {{ ((now - dev["last_seen"]) // 60) }} min{% else %}nie gesehen{% endif %}
+    {% if dev["trusted_time_age"] is not none %} · Zeit-Alter {{ dev["trusted_time_age"] }} s{% endif %}
+  </p>
+  {% if dev["lock_reason"] %}<p class="muted">Grund: {{ dev["lock_reason"] }}</p>{% endif %}
+  {% if not has_pin %}<p style="color:#ffab40">⚠ Für dieses Gerät ist noch kein PIN gesetzt – bis dahin ist es fail-secure gesperrt.</p>{% endif %}
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Sperrzeiten</h2>
+    {% if windows %}
+    <table>
+      <tr><th>Zeit</th><th>Tage</th><th></th></tr>
+      {% for w in windows %}
+      <tr>
+        <td>{{ w["startHHMM"] }}–{{ w["endHHMM"] }}</td>
+        <td class="muted">{{ w["dayLabels"] }}{% if w["label"] %} · {{ w["label"] }}{% endif %}</td>
+        <td>
+          <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/window/{{ w['id'] }}/delete">
+            <button class="danger" type="submit">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">Noch keine Sperrzeit. Füge unten eine hinzu (Kernfunktion).</p>
+    {% endif %}
+
+    <h3 style="margin-top:16px">Sperrzeit hinzufügen</h3>
+    <form method="post" action="/admin/devices/{{ dev['id'] }}/window/add">
+      <div class="row">
+        <label>von <input name="start" value="21:00" type="time"></label>
+        <label>bis <input name="end" value="07:00" type="time"></label>
+      </div>
+      <div class="row" style="margin:10px 0">
+        {% for d, lbl in days %}
+        <label class="muted"><input type="checkbox" name="day_{{ d }}"> {{ lbl }}</label>
+        {% endfor %}
+        <span class="muted">(keine = täglich)</span>
+      </div>
+      <div class="row">
+        <input name="label" placeholder="Bezeichnung (optional)">
+        <button type="submit">Hinzufügen</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>PIN</h2>
+    <form class="row" method="post" action="/admin/devices/{{ dev['id'] }}/pin">
+      <input name="pin" placeholder="neuer PIN" minlength="4" maxlength="32">
+      <button type="submit">PIN setzen</button>
+    </form>
+    <p class="muted">Der PIN wird nur als Hash gespeichert. {% if has_pin %}Aktuell ist ein PIN gesetzt.{% endif %}</p>
+
+    <h2 style="margin-top:18px">Einstellungen</h2>
+    <form method="post" action="/admin/devices/{{ dev['id'] }}/settings">
+      <div class="row">
+        <label class="muted">Entsperrdauer (min)
+          <input name="unlock_grace" type="number" value="{{ draft.get('unlockGraceMinutes', 60) }}" style="width:80px"></label>
+        <label class="muted">Max. Zeit-Alter (min)
+          <input name="max_stale" type="number" value="{{ draft.get('maxTrustedTimeStalenessMinutes', 720) }}" style="width:90px"></label>
+      </div>
+      <button style="margin-top:10px" type="submit">Speichern</button>
+    </form>
+
+    <h2 style="margin-top:18px">Fernsteuerung</h2>
+    <div class="row">
+      <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
+        <input type="hidden" name="kind" value="unlock">
+        <input name="minutes" type="number" value="60" style="width:70px">
+        <button type="submit">Entsperren</button>
+      </form>
+      <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
+        <input type="hidden" name="kind" value="lock"><button class="secondary" type="submit">Sofort sperren</button>
+      </form>
+      <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
+        <input type="hidden" name="kind" value="update"><button class="secondary" type="submit">Update</button>
+      </form>
+      <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command"
+            onsubmit="return confirm('Gerät wirklich remote deinstallieren (Admin-Wipe)?');">
+        <input type="hidden" name="kind" value="uninstall"><button class="danger" type="submit">App entfernen</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Verlauf</h2>
+  <table>
+    {% for a in audit %}
+    <tr><td class="muted" style="width:150px">{{ a["ts"] }}</td><td>{{ a["actor"] }}</td><td>{{ a["action"] }}</td><td class="muted">{{ a["detail"] }}</td></tr>
+    {% endfor %}
+  </table>
+  <form method="post" action="/admin/devices/{{ dev['id'] }}/delete" style="margin-top:14px"
+        onsubmit="return confirm('Gerät aus der Brücke löschen? (Deinstalliert die App NICHT)');">
+    <button class="danger" type="submit">Gerät aus Brücke entfernen</button>
+  </form>
+</div>
+{% endblock %}

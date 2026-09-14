@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FrohLock Brücke</title>
+  <style>
+    :root { --bg:#0b1f3a; --card:#13294b; --accent:#2e7d32; --text:#eef2f7; --muted:#9fb3c8; --danger:#c62828; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0f1720; color:var(--text); }
+    header { background:var(--bg); padding:14px 22px; display:flex; justify-content:space-between; align-items:center; }
+    header a { color:var(--muted); text-decoration:none; margin-left:16px; }
+    header .brand { font-weight:700; font-size:18px; color:#fff; }
+    main { max-width:960px; margin:24px auto; padding:0 16px; }
+    .card { background:var(--card); border-radius:12px; padding:18px 20px; margin-bottom:18px; }
+    h1,h2,h3 { margin:0 0 12px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { text-align:left; padding:9px 8px; border-bottom:1px solid rgba(255,255,255,.08); font-size:14px; }
+    .badge { display:inline-block; padding:2px 9px; border-radius:20px; font-size:12px; font-weight:600; }
+    .badge.locked { background:#7b1f1f; }
+    .badge.open { background:#1f5c2e; }
+    .badge.off { background:#333; color:#aaa; }
+    input,select,button { font-size:14px; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:#0b1f3a; color:#fff; }
+    button { background:var(--accent); border:0; cursor:pointer; font-weight:600; }
+    button.secondary { background:#37475e; }
+    button.danger { background:var(--danger); }
+    form.inline { display:inline; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .muted { color:var(--muted); font-size:13px; }
+    a.btn { text-decoration:none; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:720px){ .grid{ grid-template-columns:1fr; } }
+    code.code { background:#0b1f3a; padding:2px 8px; border-radius:6px; font-size:16px; letter-spacing:2px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="brand">🔒 FrohLock Brücke</span>
+    <nav>
+      <a href="/">Geräte</a>
+      <a href="/logout">Abmelden</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

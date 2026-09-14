@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anmeldung – FrohLock</title>
+  <style>
+    body { margin:0; font-family: system-ui, sans-serif; background:#0f1720; color:#eef2f7; display:grid; place-items:center; height:100vh; }
+    form { background:#13294b; padding:28px; border-radius:14px; width:320px; }
+    h1 { margin:0 0 18px; font-size:20px; }
+    input { width:100%; padding:10px; margin:6px 0 14px; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:#0b1f3a; color:#fff; }
+    button { width:100%; padding:11px; border:0; border-radius:8px; background:#2e7d32; color:#fff; font-weight:600; cursor:pointer; }
+    .error { color:#ff8a80; font-size:13px; margin-bottom:8px; }
+  </style>
+</head>
+<body>
+  <form method="post" action="/login">
+    <h1>🔒 FrohLock Brücke</h1>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label>Benutzer</label>
+    <input name="username" autofocus autocomplete="username">
+    <label>Passwort</label>
+    <input name="password" type="password" autocomplete="current-password">
+    <button type="submit">Anmelden</button>
+  </form>
+</body>
+</html>
