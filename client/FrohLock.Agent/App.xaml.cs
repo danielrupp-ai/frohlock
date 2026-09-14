@@ -24,6 +24,14 @@ public partial class App : Application
 
     private void OnStartup(object sender, StartupEventArgs e)
     {
+        // Reiner Anzeige-Modus (Benutzerübersicht) – kein Overlay, keine Sperre.
+        if (e.Args.Any(a => string.Equals(a, "--status", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShutdownMode = ShutdownMode.OnLastWindowClose;
+            new StatusWindow(_ipc).Show();
+            return;
+        }
+
         _singleInstance = new Mutex(true, "Local\\FrohLock.Agent.SingleInstance", out bool created);
         if (!created) { Shutdown(); return; }
 

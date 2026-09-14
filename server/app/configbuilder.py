@@ -47,6 +47,7 @@ def build_full_config(device_id: str) -> dict | None:
         "deviceId": device_id,
         "windows": draft.get("windows", []),
         "dailyBudgetMinutes": draft.get("dailyBudgetMinutes", 0),
+        "dailyBudgetByWeekday": draft.get("dailyBudgetByWeekday", []),
         "unlockGraceMinutes": draft.get("unlockGraceMinutes", 60),
         "pinHash": draft.get("pinHash", ""),
         "pinSalt": draft.get("pinSalt", ""),

@@ -105,7 +105,11 @@ public sealed class IpcServer : BackgroundService
                     Locked = d.IsLocked,
                     Reason = d.Reason,
                     MinutesUntilLock = d.IsLocked ? -1 : _controller.MinutesUntilLock(),
-                    ForgotUrl = string.IsNullOrWhiteSpace(baseUrl) ? "" : baseUrl.TrimEnd('/') + "/forgot"
+                    ForgotUrl = string.IsNullOrWhiteSpace(baseUrl) ? "" : baseUrl.TrimEnd('/') + "/forgot",
+                    ScheduleSummary = _controller.TodayScheduleSummary(),
+                    UsageMinutes = _controller.TodayUsageMinutes(),
+                    BudgetMinutes = _controller.TodayBudgetMinutes(),
+                    Configured = _controller.IsConfigured
                 };
             }
             case IpcKind.SubmitPin:

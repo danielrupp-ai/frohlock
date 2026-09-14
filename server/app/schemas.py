@@ -31,6 +31,7 @@ class ConfigDraft(BaseModel):
     pinIterations: int = 210_000
     unlockGraceMinutes: int = 60
     dailyBudgetMinutes: int = 0
+    dailyBudgetByWeekday: list[int] = Field(default_factory=list)  # 7 Werte So..Sa, 0 = Standard
     maxTrustedTimeStalenessMinutes: int = 720
     resetEmail: str = ""
 

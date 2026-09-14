@@ -4,7 +4,7 @@
         Title="FrohLock – PIN erforderlich" Height="200" Width="380"
         Background="#0F1720" WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
   <StackPanel Margin="22">
-    <TextBlock Text="Zum Entfernen von FrohLock den Eltern-PIN eingeben:"
+    <TextBlock x:Name="PromptText" Text="Zum Entfernen von FrohLock den Eltern-PIN eingeben:"
                Foreground="#EEF2F7" TextWrapping="Wrap" Margin="0,0,0,12"/>
     <PasswordBox x:Name="PinBox" Padding="8" MaxLength="32" KeyDown="PinBox_KeyDown"/>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">

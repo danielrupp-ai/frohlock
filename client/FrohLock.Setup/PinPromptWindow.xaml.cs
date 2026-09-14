@@ -7,9 +7,10 @@ public partial class PinPromptWindow : Window
 {
     public string Pin { get; private set; } = "";
 
-    public PinPromptWindow()
+    public PinPromptWindow(string? message = null)
     {
         InitializeComponent();
+        if (!string.IsNullOrEmpty(message)) PromptText.Text = message;
         Loaded += (_, _) => PinBox.Focus();
     }
 

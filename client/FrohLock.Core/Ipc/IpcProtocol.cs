@@ -29,4 +29,10 @@ public sealed class IpcMessage
     public int MinutesUntilLock { get; set; } = -1;
     /// <summary>„PIN vergessen?"-Adresse (Server + /forgot), auf dem Sperrbildschirm anzeigbar.</summary>
     public string ForgotUrl { get; set; } = "";
+
+    // Für die Benutzer-/Status-Übersicht (read-only Anzeige):
+    public string ScheduleSummary { get; set; } = "";  // Sperrzeiten heute, menschenlesbar
+    public int UsageMinutes { get; set; }               // heute genutzt
+    public int BudgetMinutes { get; set; }              // heutiges Tageslimit (0 = keins)
+    public bool Configured { get; set; }                // ist FrohLock eingerichtet (PIN gesetzt)?
 }

@@ -70,9 +70,9 @@ public sealed class EnforcementController
 
             var baseDec = _engine.Decide(localNow, age, unlockUntilLocal);
 
-            // Optionales Tages-Gesamtlimit (reine Logik in BudgetPolicy).
+            // Optionales Tages-Gesamtlimit (Wochentag-Wert vor Standard).
             bool graceActive = unlockUntilLocal is { } u && localNow < u;
-            return BudgetPolicy.Apply(baseDec, _config.DailyBudgetMinutes,
+            return BudgetPolicy.Apply(baseDec, _config.EffectiveDailyBudget(localNow.DayOfWeek),
                 _state.UsageMinutesToday(localNow), graceActive,
                 unlockUntilLocal?.ToString("HH:mm"));
         }
@@ -130,6 +130,43 @@ public sealed class EnforcementController
         }
     }
 
+    public bool IsConfigured
+    {
+        get { lock (_gate) return _config is not null && !string.IsNullOrEmpty(_config.PinHash); }
+    }
+
+    public int TodayUsageMinutes()
+    {
+        lock (_gate) return _state.UsageMinutesToday(_clock.UtcNow.ToLocalTime());
+    }
+
+    public int TodayBudgetMinutes()
+    {
+        lock (_gate)
+        {
+            if (_config is null) return 0;
+            return _config.EffectiveDailyBudget(_clock.UtcNow.ToLocalTime().DayOfWeek);
+        }
+    }
+
+    /// <summary>Menschenlesbare Sperrzeiten für heute (für die Status-Anzeige).</summary>
+    public string TodayScheduleSummary()
+    {
+        lock (_gate)
+        {
+            if (_config is null) return "Noch nicht eingerichtet.";
+            var today = _clock.UtcNow.ToLocalTime().DayOfWeek;
+            var parts = new List<string>();
+            foreach (var w in _config.Windows)
+            {
+                if (!w.Enabled) continue;
+                if (w.Days.Count != 0 && !w.Days.Contains(today)) continue;
+                parts.Add($"{w.StartMinute / 60:00}:{w.StartMinute % 60:00}–{w.EndMinute / 60:00}:{w.EndMinute % 60:00}");
+            }
+            return parts.Count == 0 ? "Heute keine feste Sperrzeit." : "Gesperrt: " + string.Join(", ", parts);
+        }
+    }
+
     /// <summary>Minuten bis zur nächsten Sperre (für die freundliche Erinnerung). -1 = keine/gesperrt.</summary>
     public int MinutesUntilLock()
     {
@@ -141,9 +178,10 @@ public sealed class EnforcementController
 
             int schedMin = _engine.MinutesUntilNextLockStart(localNow); // -1 = keine/schon Sperrzeit
             int budgetMin = -1;
-            if (_config.DailyBudgetMinutes > 0)
+            int budgetToday = _config.EffectiveDailyBudget(localNow.DayOfWeek);
+            if (budgetToday > 0)
             {
-                int rem = _config.DailyBudgetMinutes - _state.UsageMinutesToday(localNow);
+                int rem = budgetToday - _state.UsageMinutesToday(localNow);
                 budgetMin = rem > 0 ? rem : 0;
             }
             // Kleineren nicht-negativen Wert nehmen (was zuerst sperrt).
@@ -196,7 +234,7 @@ public sealed class EnforcementController
                 PinFailuresToday = _state.PinFailuresToday,
                 LastBootUnix = _state.LastBootUnix,
                 UsageMinutesToday = _state.UsageMinutesToday(localNow),
-                DailyBudgetMinutes = _config?.DailyBudgetMinutes ?? 0,
+                DailyBudgetMinutes = _config?.EffectiveDailyBudget(localNow.DayOfWeek) ?? 0,
                 UsageDay = localNow.ToString("yyyy-MM-dd")
             };
         }

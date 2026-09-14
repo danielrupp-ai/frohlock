@@ -112,11 +112,17 @@ def device_detail(request: Request, device_id: str):
     max_min = max([u["minutes"] for u in usage_week] + [1])
     budget = draft.get("dailyBudgetMinutes", 0)
 
+    # Wochentag-Budgets auf 7 Werte normalisieren (0=So..6=Sa) und als Mo..So-Liste anzeigen.
+    wb = (draft.get("dailyBudgetByWeekday") or [])
+    wb = (wb + [0] * 7)[:7]
+    weekday_budgets = [{"idx": d, "label": lbl, "value": wb[d]} for d, lbl in DAYS]
+
     return templates.TemplateResponse("device.html", {
         "request": request, "dev": dev, "version": version, "draft": draft,
         "windows": windows, "days": DAYS, "audit": audit_rows, "now": int(time.time()),
         "has_pin": bool(draft.get("pinHash")),
         "usage_week": usage_week, "usage_max": max_min, "budget": budget,
+        "weekday_budgets": weekday_budgets,
         "usage_today": dev["usage_today"] if "usage_today" in dev.keys() else 0,
     })
 
@@ -173,15 +179,28 @@ def set_pin(request: Request, device_id: str, pin: str = Form(...)):
 
 
 @router.post("/admin/devices/{device_id}/settings")
-def set_settings(request: Request, device_id: str,
-                 unlock_grace: int = Form(60), max_stale: int = Form(720), daily_budget: int = Form(0)):
+async def set_settings(request: Request, device_id: str):
     if not _is_admin(request):
         return RedirectResponse("/login", status_code=303)
+    form = await request.form()
+
+    def _int(name, default=0):
+        try:
+            return max(0, int(form.get(name, default) or default))
+        except (TypeError, ValueError):
+            return default
+
+    # Wochentag-Budgets (0=So..6=Sa); 0 = Standard verwenden.
+    weekday = [_int(f"wb_{i}", 0) for i in range(7)]
+    if not any(weekday):
+        weekday = []  # nichts gesetzt -> Feld leeren
+
     draft = _load_draft(device_id)
     draft.update({
-        "unlockGraceMinutes": unlock_grace,
-        "maxTrustedTimeStalenessMinutes": max_stale,
-        "dailyBudgetMinutes": daily_budget,
+        "unlockGraceMinutes": _int("unlock_grace", 60),
+        "maxTrustedTimeStalenessMinutes": _int("max_stale", 720),
+        "dailyBudgetMinutes": _int("daily_budget", 0),
+        "dailyBudgetByWeekday": weekday,
     })
     configbuilder.save_draft(device_id, draft)
     db.audit(request.session["admin_user"], "settings", device_id, "")

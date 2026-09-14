@@ -14,8 +14,26 @@ public sealed class LockConfig
     /// <summary>Geplante Sperrfenster (Kernfunktion).</summary>
     public List<ScheduleWindow> Windows { get; set; } = new();
 
-    /// <summary>Tägliches Zeitbudget in Minuten (0 = unbegrenzt). Zusatzfunktion.</summary>
+    /// <summary>Tägliches Gesamt-Zeitbudget in Minuten (0 = unbegrenzt). Zusätzlich zu den Sperrzeiten.</summary>
     public int DailyBudgetMinutes { get; set; }
+
+    /// <summary>
+    /// Optionales Budget je Wochentag (7 Einträge, Index 0=Sonntag .. 6=Samstag).
+    /// Wert &gt; 0 überschreibt <see cref="DailyBudgetMinutes"/> an diesem Tag; sonst gilt der Standard.
+    /// Leere Liste = überall Standard.
+    /// </summary>
+    public List<int> DailyBudgetByWeekday { get; set; } = new();
+
+    /// <summary>Effektives Tagesbudget für einen Wochentag (Wochentag-Wert vor Standard).</summary>
+    public int EffectiveDailyBudget(DayOfWeek day)
+    {
+        if (DailyBudgetByWeekday is { Count: 7 })
+        {
+            int v = DailyBudgetByWeekday[(int)day];
+            if (v > 0) return v;
+        }
+        return DailyBudgetMinutes;
+    }
 
     /// <summary>Wie lange eine PIN-Entsperrung gilt (Minuten), bevor der Zeitplan wieder greift.</summary>
     public int UnlockGraceMinutes { get; set; } = 60;

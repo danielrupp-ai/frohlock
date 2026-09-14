@@ -2,7 +2,7 @@
 ; Wird von der CI mit iscc kompiliert. Payload liegt unter installer\payload\.
 
 #ifndef AppVersion
-  #define AppVersion "0.7.0"
+  #define AppVersion "0.8.0"
 #endif
 
 #define AppName "FrohLock"
@@ -43,9 +43,11 @@ Name: "{commonappdata}\{#AppName}"
 
 [Icons]
 Name: "{group}\FrohLock einrichten"; Filename: "{app}\FrohLockSetup.exe"
+Name: "{group}\FrohLock Übersicht"; Filename: "{app}\FrohLockAgent.exe"; Parameters: "--status"
 Name: "{group}\FrohLock deinstallieren"; Filename: "{uninstallexe}"
-; Gut sichtbare Verknüpfung, falls das Einrichtungs-Fenster geschlossen wurde.
+; Gut sichtbare Verknüpfungen.
 Name: "{autodesktop}\FrohLock einrichten"; Filename: "{app}\FrohLockSetup.exe"
+Name: "{autodesktop}\FrohLock Übersicht"; Filename: "{app}\FrohLockAgent.exe"; Parameters: "--status"
 
 [Run]
 ; 1) ProgramData-Verzeichnis abriegeln: nur SYSTEM + Administratoren, keine Standardnutzer.
@@ -58,6 +60,9 @@ Filename: "{sys}\sc.exe"; Parameters: "create {#ServiceName} binPath= ""\""{app}
 Filename: "{sys}\sc.exe"; Parameters: "description {#ServiceName} ""Bildschirmzeit-Schutz fuer Kinder (FrohLock)."""; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "failure {#ServiceName} reset= 0 actions= restart/5000/restart/5000/restart/5000"; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "failureflag {#ServiceName} 1"; Flags: runhidden waituntilterminated
+; Dienst auch im abgesicherten Modus starten (schließt die Safe-Mode-Umgehung).
+Filename: "{sys}\reg.exe"; Parameters: "add ""HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{#ServiceName}"" /ve /t REG_SZ /d Service /f"; Flags: runhidden waituntilterminated
+Filename: "{sys}\reg.exe"; Parameters: "add ""HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{#ServiceName}"" /ve /t REG_SZ /d Service /f"; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden waituntilterminated
 
 ; 3) Overlay-Agent bei JEDEM Logon (im Nutzerkontext) starten.
@@ -69,8 +74,11 @@ Filename: "{app}\FrohLockSetup.exe"; Description: "FrohLock jetzt einrichten"; F
 [UninstallRun]
 ; Reihenfolge: Task weg, Dienst stoppen + entfernen (vor dem Löschen der Dateien).
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""{#AgentTask}"" /F"; Flags: runhidden; RunOnceId: "DelTask"
+Filename: "{sys}\taskkill.exe"; Parameters: "/f /im FrohLockAgent.exe"; Flags: runhidden; RunOnceId: "KillAgent"
 Filename: "{sys}\sc.exe"; Parameters: "stop {#ServiceName}"; Flags: runhidden; RunOnceId: "StopSvc"
 Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden; RunOnceId: "DelSvc"
+Filename: "{sys}\reg.exe"; Parameters: "delete ""HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{#ServiceName}"" /f"; Flags: runhidden; RunOnceId: "DelSafeMin"
+Filename: "{sys}\reg.exe"; Parameters: "delete ""HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{#ServiceName}"" /f"; Flags: runhidden; RunOnceId: "DelSafeNet"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commonappdata}\{#AppName}"
@@ -104,7 +112,7 @@ begin
   if not Exec(ExpandConstant('{app}\FrohLockSetup.exe'), '--verify-pin', '',
               SW_SHOW, ewWaitUntilTerminated, ResultCode) then
   begin
-    MsgBox('PIN-Pruefung konnte nicht gestartet werden. Deinstallation abgebrochen.', mbError, MB_OK);
+    MsgBox('Nur Eltern koennen FrohLock mit dem PIN-Code entfernen. Deinstallation abgebrochen.', mbError, MB_OK);
     Result := False;
     exit;
   end;
@@ -113,7 +121,7 @@ begin
     Result := True
   else
   begin
-    MsgBox('Falscher oder abgebrochener PIN. Deinstallation abgebrochen.', mbError, MB_OK);
+    MsgBox('Nur Eltern koennen FrohLock mit dem PIN-Code entfernen. Ohne richtigen PIN ist keine Deinstallation moeglich.', mbError, MB_OK);
     Result := False;
   end;
 end;
