@@ -1,0 +1,28 @@
+# Build
+bin/
+obj/
+*.user
+.vs/
+
+# .NET publish output
+publish/
+artifacts/
+
+# Installer output
+installer/Output/
+
+# Secrets — NIE committen
+tools/dev-keys/*private*.pem
+server/secrets/
+*.env
+.env
+
+# Python
+server/.venv/
+__pycache__/
+*.pyc
+server/*.db
+server/app.db
+
+# OS
+.DS_Store
