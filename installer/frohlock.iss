@@ -2,7 +2,7 @@
 ; Wird von der CI mit iscc kompiliert. Payload liegt unter installer\payload\.
 
 #ifndef AppVersion
-  #define AppVersion "0.6.0"
+  #define AppVersion "0.7.0"
 #endif
 
 #define AppName "FrohLock"
@@ -76,6 +76,18 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden;
 Type: filesandordirs; Name: "{commonappdata}\{#AppName}"
 
 [Code]
+{ Vor der Installation: laufenden Dienst + Agent stoppen und Dienst entfernen,
+  damit ein Upgrade die (sonst gesperrten) Programmdateien wirklich ersetzt. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var rc: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im FrohLockAgent.exe', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Exec(ExpandConstant('{sys}\sc.exe'), 'delete {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Sleep(1500);
+  Result := '';
+end;
+
 { Deinstallation nur mit Eltern-PIN – oder wenn der Server einen Admin-Wipe autorisiert hat. }
 function InitializeUninstall(): Boolean;
 var

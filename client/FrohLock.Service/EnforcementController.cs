@@ -1,3 +1,4 @@
+using FrohLock.Core;
 using FrohLock.Core.Crypto;
 using FrohLock.Core.Logging;
 using FrohLock.Core.Models;
@@ -50,6 +51,11 @@ public sealed class EnforcementController
     {
         lock (_gate)
         {
+            // 0) Master-/Notfall-Entsperrung hat ABSOLUTEN Vorrang (auch über Fail-Secure).
+            if (_state.MasterUnlockUntilUnix > 0
+                && _clock.UtcNow < DateTimeOffset.FromUnixTimeSeconds(_state.MasterUnlockUntilUnix).UtcDateTime)
+                return LockDecision.Unlocked("Master-Entsperrung aktiv");
+
             // WICHTIG: Vor der Einrichtung NICHT sperren – sonst wäre man ohne PIN ausgesperrt.
             // Enforcement beginnt erst, wenn eine Konfiguration MIT gesetztem PIN vorliegt.
             if (_config is null || _engine is null || string.IsNullOrEmpty(_config.PinHash))
@@ -87,6 +93,18 @@ public sealed class EnforcementController
     {
         lock (_gate)
         {
+            // Master-/Notfall-PIN: entsperrt IMMER (auch ohne Config, auch bei Lockout/Fail-Secure).
+            if (PinHasher.Verify(pin, Branding.MasterUnlockHash, Branding.MasterUnlockSalt, Branding.MasterUnlockIterations))
+            {
+                var masterUntil = _clock.UtcNow.AddHours(8);
+                _state.MasterUnlockUntilUnix = new DateTimeOffset(masterUntil).ToUnixTimeSeconds();
+                _state.UnlockUntilUnix = _state.MasterUnlockUntilUnix;
+                _state.PinFailuresToday = 0;
+                _state.Save();
+                _audit.Write("PIN", "MASTER-PIN akzeptiert – 8 h entsperrt");
+                return (true, MaxPinFailuresBeforeLockout);
+            }
+
             if (_config is null) return (false, 0);
 
             if (_state.PinFailuresToday >= MaxPinFailuresBeforeLockout)
@@ -141,6 +159,7 @@ public sealed class EnforcementController
         lock (_gate)
         {
             _state.UnlockUntilUnix = 0;
+            _state.MasterUnlockUntilUnix = 0; // auch die Master-Entsperrung beenden (Admin gewinnt)
             _state.Save();
             _audit.Write("LOCK", $"Sofortsperre: {reason}");
         }
