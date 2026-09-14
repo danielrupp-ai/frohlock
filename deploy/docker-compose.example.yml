@@ -1,0 +1,20 @@
+# FrohLock-Brücke auf dem Hetzner-Server (neben den anderen Standalone-Diensten).
+# Auf dem Server liegt eine konkrete Kopie als ~/apps/frohlock/docker-compose.yml.
+# Muster wie kontoklar: eigener Container am externen Netz "caddy_proxy",
+# Caddy erreicht ihn per Containername (siehe deploy/frohlock.caddy).
+services:
+  frohlock:
+    build:
+      context: ./repo/server
+    image: frohlock:latest
+    container_name: frohlock
+    restart: unless-stopped
+    env_file: [ ./frohlock.env ]
+    volumes:
+      - ./secrets/signing_private.pem:/secrets/signing_private.pem:ro
+      - ./data:/data
+    networks: [caddy_proxy]
+
+networks:
+  caddy_proxy:
+    external: true

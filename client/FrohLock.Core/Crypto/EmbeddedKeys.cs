@@ -1,20 +1,19 @@
 namespace FrohLock.Core.Crypto;
 
 /// <summary>
-/// Fest eingebauter Public Key des Signaturservers. Der private Schluessel liegt
-/// AUSSCHLIESSLICH auf dem Server. Beim Release wird dieser Wert durch den
-/// produktiven Public Key ersetzt (siehe tools/inject-public-key.sh / CI).
-/// Aktuell: Dev-Schluessel aus tools/dev-keys/.
+/// Fest eingebauter Public Key des Signaturservers (PRODUKTIV).
+/// Der zugehoerige private Schluessel liegt AUSSCHLIESSLICH auf dem Server
+/// (~/apps/frohlock/secrets/signing_private.pem, dort erzeugt, verlaesst ihn nie).
 /// </summary>
 public static class EmbeddedKeys
 {
     public const string SigningPublicKeyPem = @"-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuPGLM8k0l83PBOFqBcV1
-9IYEP8bzLrENZZYTDLp9DJgq5mSF7UGCuvEB5TFhFVfTYLrFmbH4LLEd7gEsNmr3
-BNnUR4aURxa3cYJ4hlApLqOpRBAH7vezx1wQZdysspNFuAijWhzG+R8VW3xF2Uwz
-zRCpldz85z3UE5bkAmqBHSEwZSO/DT4whdAVymq2U0Blw2X2O2hP91Y32JK6GUrB
-ENBYY9aHngESJwbUf4YUb6jHEQCHRnWGTyGzTxCPv5I/06JGGOodshQkMZhnL43h
-XBEeanqGipcUUPb4KAB3IPuQN+jh21LyG+0h92BaMVqEWsPMO0M9jEJDS7P6dK6I
-7wIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhMBhplCOg5jcy2ORMbR5
+cyF08qRgUyJjsxfyYGTqwW6Y61e+hICRk9tczqHmCo9eWMS70BHZrickHsBhl0Ms
+31fymtbunk85yxbuif8EwpH84zAk4Dh1ZvkcsMD/J93bBHQ8XAD9gW5YC1pTAdBp
+toUSV+wheUoTE3DQoAAji/AOpZcd6RUSpomLdw1YwszpvPyZXvpg3BZNlQFlwdYY
+2Exrf33lzqmCOnoaxcNJlv62kpLm4k2Myyyi6pw3v21CAFHuHF/vVWvdCjZjiE/W
+KlMEDS3+xhpyh/6lXfuOcv0g08N7IsGz6Vv+qYBS/p++YMzu38Lo5DFX6Q2L96YX
+MwIDAQAB
 -----END PUBLIC KEY-----";
 }

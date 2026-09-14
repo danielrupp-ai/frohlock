@@ -1,0 +1,18 @@
+# FrohLock-Brücke – Caddy-Site-Block.
+# Auf dem Server abgelegt als /home/deploy/infra/caddy/conf.d/frohlock.caddy
+# (wird von der Haupt-Caddyfile via `import /etc/caddy/conf.d/*.caddy` geladen).
+# Voraussetzung: DNS-A-Record  frohlock.froehlichdienste.de -> 46.224.7.46
+frohlock.froehlichdienste.de {
+    import security-headers
+    encode zstd gzip
+    handle {
+        reverse_proxy frohlock:8080 {
+            lb_try_duration 30s
+            lb_try_interval 2s
+            transport http {
+                dial_timeout 3s
+                resolvers 127.0.0.11
+            }
+        }
+    }
+}
