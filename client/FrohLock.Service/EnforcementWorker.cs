@@ -71,11 +71,11 @@ public sealed class EnforcementWorker : BackgroundService
                     _ = SafeSyncTimeAsync(ct);
                 }
 
-                var cfg = _controller.Config;
-                if (cfg is not null && (now - _lastServerPollUtc) > TimeSpan.FromSeconds(Math.Max(15, cfg.ServerPollSeconds)))
+                var pollCtx = GetPollContext();
+                if (pollCtx is not null && (now - _lastServerPollUtc) > TimeSpan.FromSeconds(pollCtx.PollSeconds))
                 {
                     _lastServerPollUtc = now;
-                    await PollServerAsync(cfg, ct).ConfigureAwait(false);
+                    await PollServerAsync(pollCtx, ct).ConfigureAwait(false);
                 }
 
                 if ((now - _lastAgentCheckUtc) > TimeSpan.FromSeconds(15))
@@ -116,19 +116,44 @@ public sealed class EnforcementWorker : BackgroundService
         catch { return null; }
     }
 
-    private async Task PollServerAsync(LockConfig cfg, CancellationToken ct)
+    /// <summary>Poll-Parameter aus Config (bevorzugt) oder Bootstrap (vor der ersten Config).</summary>
+    private sealed record PollContext(string BaseUrl, string DeviceId, List<string> TlsPins,
+        long ConfigVersion, int PollSeconds, int UnlockGrace);
+
+    private PollContext? GetPollContext()
     {
-        if (string.IsNullOrWhiteSpace(cfg.ServerBaseUrl)) return;
+        var cfg = _controller.Config;
+        if (cfg is not null && !string.IsNullOrWhiteSpace(cfg.ServerBaseUrl))
+            return new PollContext(cfg.ServerBaseUrl, cfg.DeviceId, cfg.TlsSpkiPins,
+                cfg.ConfigVersion, Math.Max(15, cfg.ServerPollSeconds), cfg.UnlockGraceMinutes);
+
+        // Noch keine Config -> Bootstrap.
+        try
+        {
+            if (File.Exists(AppPaths.BootstrapPath))
+            {
+                var b = Json.Deserialize<BootstrapInfo>(File.ReadAllText(AppPaths.BootstrapPath));
+                if (b is not null && !string.IsNullOrWhiteSpace(b.ServerBaseUrl))
+                    return new PollContext(b.ServerBaseUrl, b.DeviceId, b.TlsSpkiPins, 0, 30, 60);
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private async Task PollServerAsync(PollContext ctx, CancellationToken ct)
+    {
         var token = ReadToken();
         if (string.IsNullOrEmpty(token)) return; // noch nicht gekoppelt
 
-        using var http = TlsPinning.CreateClient(cfg.TlsSpkiPins, TimeSpan.FromSeconds(15));
-        var client = new ServerClient(http, cfg.ServerBaseUrl, cfg.DeviceId, token);
+        using var http = TlsPinning.CreateClient(ctx.TlsPins, TimeSpan.FromSeconds(15));
+        var client = new ServerClient(http, ctx.BaseUrl, ctx.DeviceId, token);
+        long haveVersion = ctx.ConfigVersion;
 
         // 1) Neue Config?
         try
         {
-            var env = await client.GetConfigAsync(cfg.ConfigVersion, ct).ConfigureAwait(false);
+            var env = await client.GetConfigAsync(haveVersion, ct).ConfigureAwait(false);
             if (env is not null)
             {
                 var applied = _configStore.Apply(env);
@@ -136,7 +161,7 @@ public sealed class EnforcementWorker : BackgroundService
                 {
                     _controller.SetConfig(applied);
                     _audit.Write("CONFIG", $"Neue Config v{applied.ConfigVersion} übernommen");
-                    cfg = applied;
+                    haveVersion = applied.ConfigVersion;
                 }
             }
         }
@@ -153,7 +178,7 @@ public sealed class EnforcementWorker : BackgroundService
                 if (cmd.ExpiresAtUnix > 0 && cmd.ExpiresAtUnix < DateTimeOffset.UtcNow.ToUnixTimeSeconds())
                 { _audit.Write("CMD", $"{cmd.Type} abgelaufen – verworfen"); continue; }
 
-                await ExecuteCommandAsync(cmd, cfg, client, ct).ConfigureAwait(false);
+                await ExecuteCommandAsync(cmd, ctx, client, haveVersion, ct).ConfigureAwait(false);
                 try { await client.AckCommandAsync(cmd.CommandId, ct).ConfigureAwait(false); } catch { }
             }
         }
@@ -164,13 +189,14 @@ public sealed class EnforcementWorker : BackgroundService
         catch (Exception ex) { _log.LogDebug(ex, "Heartbeat Fehler"); }
     }
 
-    private async Task ExecuteCommandAsync(DeviceCommand cmd, LockConfig cfg, ServerClient client, CancellationToken ct)
+    private async Task ExecuteCommandAsync(DeviceCommand cmd, PollContext ctx, ServerClient client,
+        long haveVersion, CancellationToken ct)
     {
         _audit.Write("CMD", $"Ausführen: {cmd.Type} ({cmd.CommandId})");
         switch (cmd.Type)
         {
             case CommandType.Unlock:
-                _controller.RemoteUnlock(cmd.UnlockMinutes ?? cfg.UnlockGraceMinutes, "Fern-Befehl");
+                _controller.RemoteUnlock(cmd.UnlockMinutes ?? ctx.UnlockGrace, "Fern-Befehl");
                 break;
             case CommandType.Lock:
                 _controller.ForceLock("Fern-Befehl");
@@ -180,14 +206,14 @@ public sealed class EnforcementWorker : BackgroundService
                 // PIN-Reset/Änderung fließt als neue signierte Config -> sofort erneut abrufen.
                 try
                 {
-                    var env = await client.GetConfigAsync(cfg.ConfigVersion, ct).ConfigureAwait(false);
+                    var env = await client.GetConfigAsync(haveVersion, ct).ConfigureAwait(false);
                     if (env is not null && _configStore.Apply(env) is { } applied)
                         _controller.SetConfig(applied);
                 }
                 catch { }
                 break;
             case CommandType.Update:
-                await TryUpdateAsync(cfg, client, ct).ConfigureAwait(false);
+                await TryUpdateAsync(ctx, client, ct).ConfigureAwait(false);
                 break;
             case CommandType.Uninstall:
                 AuthorizeAndUninstall();
@@ -197,9 +223,9 @@ public sealed class EnforcementWorker : BackgroundService
         }
     }
 
-    private async Task TryUpdateAsync(LockConfig cfg, ServerClient client, CancellationToken ct)
+    private async Task TryUpdateAsync(PollContext ctx, ServerClient client, CancellationToken ct)
     {
-        using var http = TlsPinning.CreateClient(cfg.TlsSpkiPins, TimeSpan.FromMinutes(5));
+        using var http = TlsPinning.CreateClient(ctx.TlsPins, TimeSpan.FromMinutes(5));
         var updater = new Updater(http, _verifier, _audit);
         var manifest = await client.GetUpdateManifestAsync("stable", ct).ConfigureAwait(false);
         if (manifest is null) return;

@@ -50,6 +50,15 @@ public sealed class ServerClient
         return Json.Deserialize<SignedEnvelope>(json);
     }
 
+    /// <summary>Setzt den Config-Entwurf (Zeitplan + PIN-Hash) – vom Eltern-Setup benutzt.</summary>
+    public async Task<bool> SetConfigDraftAsync(object draft, CancellationToken ct = default)
+    {
+        var body = Json.Serialize(draft);
+        using var resp = await _http.PostAsync($"{_baseUrl}/devices/{_deviceId}/config-draft",
+            new StringContent(body, Encoding.UTF8, "application/json"), ct).ConfigureAwait(false);
+        return resp.IsSuccessStatusCode;
+    }
+
     /// <summary>Sendet den Heartbeat/Status.</summary>
     public async Task HeartbeatAsync(DeviceStatus status, CancellationToken ct = default)
     {

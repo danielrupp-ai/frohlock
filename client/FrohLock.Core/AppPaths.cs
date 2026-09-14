@@ -18,6 +18,7 @@ public static class AppPaths
     public static string StatePath => Path.Combine(DataDir, "runtime.state.json");
     public static string AuditLogPath => Path.Combine(DataDir, "audit.log");
     public static string DeviceTokenPath => Path.Combine(DataDir, "device.token");
+    public static string BootstrapPath => Path.Combine(DataDir, "bootstrap.json");
 
     public static string InstallDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), ProductName);
