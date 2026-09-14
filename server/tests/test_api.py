@@ -106,6 +106,18 @@ def test_full_flow(client):
     assert cmd["deviceId"] == device_id
 
 
+def test_landing_public_and_admin_moved(client):
+    # Öffentliche Landingpage ohne Login
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "herunterladen" in r.text.lower() or "vorbereitet" in r.text.lower()
+    # Admin liegt jetzt unter /admin und verlangt Login (Redirect)
+    r2 = client.get("/admin", follow_redirects=False)
+    assert r2.status_code == 303
+    # Download ohne bereitgestellte Datei -> 404 (sauber, kein 500)
+    assert client.get("/download").status_code == 404
+
+
 def test_foreign_device_rejected(client):
     _admin_login(client)
     client.post("/admin/pairing", data={"device_name": "A"}, follow_redirects=False)

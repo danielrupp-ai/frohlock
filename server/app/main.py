@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import admin, api, db, reset
+from . import admin, api, db, public, reset
 from .config import settings
 from .security import hash_password
 
@@ -18,6 +18,7 @@ def create_app() -> FastAPI:
     # Admin-Passwort-Hash im Speicher halten (kein Klartext persistiert).
     app.state.admin_password_hash = hash_password(settings.admin_password)
 
+    app.include_router(public.router)
     app.include_router(api.router)
     app.include_router(reset.router)
     app.include_router(admin.router)

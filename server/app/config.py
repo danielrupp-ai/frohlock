@@ -13,6 +13,9 @@ class Settings:
     def __init__(self) -> None:
         self.db_path: str = os.getenv("FROHLOCK_DB", str(BASE_DIR / "app.db"))
 
+        # Verzeichnis, aus dem die Setup-.exe öffentlich ausgeliefert wird.
+        self.download_dir: str = os.getenv("FROHLOCK_DOWNLOAD_DIR", "/data/download")
+
         # Privater Signaturschlüssel – NUR auf dem Server. Dev-Default = tools/dev-keys.
         self.signing_key_path: str = os.getenv(
             "FROHLOCK_SIGNING_KEY", str(REPO_DIR / "tools" / "dev-keys" / "signing_private.pem")

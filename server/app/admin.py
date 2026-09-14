@@ -45,7 +45,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     pw_hash = request.app.state.admin_password_hash
     if username == settings.admin_user and verify_password(password, pw_hash):
         request.session["admin_user"] = username
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/admin", status_code=303)
     return templates.TemplateResponse("login.html", {"request": request, "error": "Falsche Zugangsdaten"})
 
 
@@ -56,7 +56,7 @@ def logout(request: Request):
 
 
 # ---------- Dashboard ----------
-@router.get("/", response_class=HTMLResponse)
+@router.get("/admin", response_class=HTMLResponse)
 def dashboard(request: Request):
     if not _is_admin(request):
         return RedirectResponse("/login", status_code=303)
@@ -79,7 +79,7 @@ def create_pairing(request: Request, device_name: str = Form("Gerät")):
         c.execute("INSERT INTO pairing_codes(code, device_name, created_at, expires_at) VALUES (?,?,?,?)",
                   (code, device_name, now, now + 24 * 3600))
     db.audit(request.session["admin_user"], "pairing-create", None, f"{code} / {device_name}")
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/admin", status_code=303)
 
 
 # ---------- Gerät-Detail ----------
@@ -89,7 +89,7 @@ def device_detail(request: Request, device_id: str):
         return RedirectResponse("/login", status_code=303)
     dev = db.query_one("SELECT * FROM devices WHERE id=?", (device_id,))
     if not dev:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/admin", status_code=303)
     stored = configbuilder.get_stored(device_id)
     version, draft = (stored[0], stored[1]) if stored else (0, {})
     windows = draft.get("windows", [])
@@ -220,4 +220,4 @@ def delete_device(request: Request, device_id: str):
         c.execute("DELETE FROM device_config WHERE device_id=?", (device_id,))
         c.execute("DELETE FROM devices WHERE id=?", (device_id,))
     db.audit(request.session["admin_user"], "device-delete", device_id, "")
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/admin", status_code=303)

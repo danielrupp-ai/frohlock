@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FrohLock – Bildschirmzeit für Kinder</title>
+  <style>
+    :root{
+      --sky1:#0B1A4A; --sky2:#243B8F; --sky3:#5B3E9E;
+      --accent:#43A047; --accent2:#2E7D32; --star:#FFE39A;
+      --text:#F4F7FF; --soft:rgba(244,247,255,.82); --card:rgba(255,255,255,.10); --border:rgba(255,255,255,.22);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);
+      background:linear-gradient(180deg,var(--sky1),var(--sky2) 55%,var(--sky3));min-height:100vh}
+    .wrap{max-width:860px;margin:0 auto;padding:28px 18px 60px}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}
+    .brand{font-weight:800;font-size:20px}
+    header a{color:var(--soft);text-decoration:none;font-size:14px;border:1px solid var(--border);padding:7px 12px;border-radius:999px}
+    .hero{text-align:center;padding:20px 0 8px}
+    .moon{font-size:96px;line-height:1}
+    h1{font-size:clamp(30px,6vw,46px);margin:8px 0 6px;text-wrap:balance}
+    .sub{font-size:clamp(16px,2.6vw,20px);color:var(--soft);max-width:40ch;margin:0 auto 26px}
+    .dl{display:inline-flex;align-items:center;gap:12px;background:linear-gradient(90deg,var(--accent2),var(--accent));
+      color:#fff;text-decoration:none;font-size:20px;font-weight:800;padding:18px 34px;border-radius:16px;
+      box-shadow:0 14px 34px rgba(0,0,0,.4);transition:transform .12s}
+    .dl:hover{transform:translateY(-2px)}
+    .dl .ico{font-size:26px}
+    .meta{margin-top:12px;color:var(--soft);font-size:13px}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:40px 0}
+    @media(max-width:640px){.grid{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px}
+    .card .ic{font-size:30px}
+    .card h3{margin:8px 0 4px;font-size:17px}
+    .card p{margin:0;color:var(--soft);font-size:14px;line-height:1.5}
+    .steps{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px 24px;margin-top:8px}
+    .steps h2{margin:0 0 14px;font-size:20px}
+    ol{margin:0;padding-left:20px}
+    ol li{margin:8px 0;color:var(--soft);line-height:1.55}
+    .foot{text-align:center;color:rgba(244,247,255,.5);font-size:12px;margin-top:34px}
+    .note{background:rgba(255,211,102,.14);border:1px solid rgba(255,211,102,.4);border-radius:12px;padding:12px 16px;
+      font-size:13px;color:#ffe7b0;margin-top:18px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="brand">🌙 FrohLock</span>
+      <a href="/admin">Für Eltern: Verwaltung →</a>
+    </header>
+
+    <div class="hero">
+      <div class="moon">🌙</div>
+      <h1>Bildschirmzeit, die einfach funktioniert</h1>
+      <p class="sub">Sanfte, liebevolle Bildschirmzeit-Grenzen für den Laptop deiner Kinder – zu festen Zeiten und mit optionalem Tageslimit.</p>
+
+      {% if available %}
+      <a class="dl" href="/download"><span class="ico">⬇️</span> Für Windows herunterladen</a>
+      <div class="meta">{% if version %}Version {{ version }} · {% endif %}{% if size_mb %}{{ size_mb }} MB · {% endif %}Windows 10/11 (64-bit)</div>
+      {% else %}
+      <div class="note">Der Download wird gerade vorbereitet – bitte in Kürze noch einmal schauen.</div>
+      {% endif %}
+    </div>
+
+    <div class="grid">
+      <div class="card"><div class="ic">🌙</div><h3>Feste Sperrzeiten</h3><p>Z. B. 21–7 Uhr komplett gesperrt – mit freundlichem Gute-Nacht-Bildschirm für die Kinder.</p></div>
+      <div class="card"><div class="ic">⏳</div><h3>Tageslimit</h3><p>Optional z. B. 2 Stunden Gesamtnutzung pro Tag. Danach ist sanft Pause.</p></div>
+      <div class="card"><div class="ic">📱</div><h3>Vom Handy steuern</h3><p>Sperrzeiten und Limit jederzeit anpassen und die Nutzung live einsehen.</p></div>
+    </div>
+
+    <div class="steps">
+      <h2>So einfach geht's</h2>
+      <ol>
+        <li>Auf dem Kinder-Laptop diese Datei herunterladen und installieren (einmalig mit Admin-Rechten).</li>
+        <li>In der <a href="/admin" style="color:#9ecbff">Eltern-Verwaltung</a> einen Kopplungscode erzeugen.</li>
+        <li>Im Setup den Code eingeben, deinen <strong>PIN</strong> und die <strong>Sperrzeiten</strong> festlegen – fertig.</li>
+        <li>PIN vergessen? Kein Problem – über <a href="/forgot" style="color:#9ecbff">PIN zurücksetzen</a> per E-Mail.</li>
+      </ol>
+      <div class="note">Tipp für sicheren Schutz: Das Kind sollte ein <strong>Standard-Benutzerkonto</strong> haben (kein Administrator).</div>
+    </div>
+
+    <div class="foot">FrohLock · Fröhlich Dienste · schlaf schön 🌟</div>
+  </div>
+</body>
+</html>
