@@ -57,6 +57,11 @@
       {% if available %}
       <a class="dl" href="/download"><span class="ico">⬇️</span> Für Windows herunterladen</a>
       <div class="meta">{% if version %}Version {{ version }} · {% endif %}{% if size_mb %}{{ size_mb }} MB · {% endif %}Windows 10/11 (64-bit)</div>
+      <div class="note" style="text-align:left;max-width:520px;margin:18px auto 0">
+        <strong>Windows-Hinweis:</strong> Weil die App neu ist, zeigt Windows beim Start eventuell
+        „Der Computer wurde durch Windows geschützt". Das ist keine Gefahr – klicke auf
+        <strong>„Weitere Informationen"</strong> und dann <strong>„Trotzdem ausführen"</strong>.
+      </div>
       {% else %}
       <div class="note">Der Download wird gerade vorbereitet – bitte in Kürze noch einmal schauen.</div>
       {% endif %}

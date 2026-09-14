@@ -50,8 +50,10 @@ public sealed class EnforcementController
     {
         lock (_gate)
         {
-            if (_config is null || _engine is null)
-                return LockDecision.Locked("Keine gültige Konfiguration – Fail-Secure");
+            // WICHTIG: Vor der Einrichtung NICHT sperren – sonst wäre man ohne PIN ausgesperrt.
+            // Enforcement beginnt erst, wenn eine Konfiguration MIT gesetztem PIN vorliegt.
+            if (_config is null || _engine is null || string.IsNullOrEmpty(_config.PinHash))
+                return LockDecision.Unlocked("Noch nicht eingerichtet");
 
             var utc = _clock.UtcNow;
             var age = _clock.Age;
