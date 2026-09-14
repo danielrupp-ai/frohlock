@@ -20,7 +20,9 @@
       <!-- 1. Kopplung -->
       <Border Background="#13294B" CornerRadius="10" Padding="16" Margin="0,0,0,16">
         <StackPanel>
-          <TextBlock Text="1) Mit der Brücke koppeln" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+          <TextBlock Text="1) Mit der Brücke koppeln" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,4"/>
+          <TextBlock Text="Den Kopplungscode erzeugst du vorher in der Eltern-Verwaltung deiner FrohLock-Adresse (…/admin) unter „Neues Gerät koppeln“. Solange du hier nichts einrichtest, bleibt der Laptop übrigens ganz normal nutzbar – gesperrt wird erst, wenn ein PIN gesetzt ist."
+                     Foreground="#9FB3C8" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/>
           <Label Content="Server-Adresse"/>
           <TextBox x:Name="ServerUrlBox" Padding="8" Margin="0,0,0,8"/>
           <Label Content="Kopplungscode (aus der Admin-Brücke)"/>

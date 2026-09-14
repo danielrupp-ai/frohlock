@@ -2,7 +2,7 @@
 ; Wird von der CI mit iscc kompiliert. Payload liegt unter installer\payload\.
 
 #ifndef AppVersion
-  #define AppVersion "0.5.0"
+  #define AppVersion "0.6.0"
 #endif
 
 #define AppName "FrohLock"
@@ -44,6 +44,8 @@ Name: "{commonappdata}\{#AppName}"
 [Icons]
 Name: "{group}\FrohLock einrichten"; Filename: "{app}\FrohLockSetup.exe"
 Name: "{group}\FrohLock deinstallieren"; Filename: "{uninstallexe}"
+; Gut sichtbare Verknüpfung, falls das Einrichtungs-Fenster geschlossen wurde.
+Name: "{autodesktop}\FrohLock einrichten"; Filename: "{app}\FrohLockSetup.exe"
 
 [Run]
 ; 1) ProgramData-Verzeichnis abriegeln: nur SYSTEM + Administratoren, keine Standardnutzer.
