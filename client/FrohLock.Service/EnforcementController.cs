@@ -94,6 +94,18 @@ public sealed class EnforcementController
         }
     }
 
+    /// <summary>Minuten bis zur nächsten Sperre (für die freundliche Erinnerung). -1 = keine/gesperrt.</summary>
+    public int MinutesUntilLock()
+    {
+        lock (_gate)
+        {
+            if (_config is null || _engine is null) return -1;
+            if (_clock.Age > TimeSpan.FromMinutes(_config.MaxTrustedTimeStalenessMinutes)) return -1;
+            var localNow = _clock.UtcNow.ToLocalTime();
+            return _engine.MinutesUntilNextLockStart(localNow);
+        }
+    }
+
     /// <summary>Sofort sperren (Fern-Befehl oder Overlay-Manipulation erkannt).</summary>
     public void ForceLock(string reason)
     {

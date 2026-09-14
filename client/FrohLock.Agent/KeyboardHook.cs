@@ -24,6 +24,9 @@ public sealed class KeyboardHook : IDisposable
     /// <summary>Steuert, ob Tasten aktuell geschluckt werden (nur während Sperre).</summary>
     public bool Active { get => _active; set => _active = value; }
 
+    /// <summary>Wird ausgelöst, wenn eine Umgehungstaste geschluckt wurde (für die freundliche Sprechblase).</summary>
+    public Action? OnBlockedKey { get; set; }
+
     public void Install()
     {
         if (_hookId != IntPtr.Zero) return;
@@ -44,12 +47,19 @@ public sealed class KeyboardHook : IDisposable
                 bool alt = (data.flags & 0x20) != 0; // LLKHF_ALTDOWN
                 bool ctrl = (GetKeyState(0x11) & 0x8000) != 0;
 
-                if (key is Key.LWin or Key.RWin) return (IntPtr)1;
-                if (alt && key == Key.Tab) return (IntPtr)1;
-                if (alt && key == Key.F4) return (IntPtr)1;
-                if (alt && key == Key.Escape) return (IntPtr)1;
-                if (ctrl && key == Key.Escape) return (IntPtr)1;
-                if (key == Key.Apps) return (IntPtr)1; // Kontextmenü-Taste
+                bool block =
+                    key is Key.LWin or Key.RWin
+                    || (alt && key == Key.Tab)
+                    || (alt && key == Key.F4)
+                    || (alt && key == Key.Escape)
+                    || (ctrl && key == Key.Escape)
+                    || key == Key.Apps;
+
+                if (block)
+                {
+                    try { OnBlockedKey?.Invoke(); } catch { }
+                    return (IntPtr)1;
+                }
             }
         }
         return CallNextHookEx(_hookId, nCode, wParam, lParam);

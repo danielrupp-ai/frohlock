@@ -52,6 +52,24 @@ public sealed class ScheduleEngine
         return localNow.AddHours(24);
     }
 
+    /// <summary>
+    /// Minuten bis zum nächsten Sperrbeginn (Übergang „frei → gesperrt"), für die
+    /// freundliche Schlafenszeit-Erinnerung. -1, wenn gerade schon eine Sperrzeit läuft
+    /// oder in den nächsten 24 h keine beginnt.
+    /// </summary>
+    public int MinutesUntilNextLockStart(DateTime localNow)
+    {
+        if (IsWithinAnyWindow(localNow, out _)) return -1; // schon Sperrzeit
+        var start = new DateTime(localNow.Year, localNow.Month, localNow.Day,
+                                 localNow.Hour, localNow.Minute, 0, localNow.Kind);
+        for (int i = 1; i <= 24 * 60; i++)
+        {
+            if (IsWithinAnyWindow(start.AddMinutes(i), out _))
+                return i;
+        }
+        return -1;
+    }
+
     private bool IsWithinAnyWindow(DateTime localNow, out ScheduleWindow? matched)
     {
         int minute = localNow.Hour * 60 + localNow.Minute;

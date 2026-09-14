@@ -98,7 +98,13 @@ public sealed class IpcServer : BackgroundService
             case IpcKind.GetStatus:
             {
                 var d = _controller.Decide();
-                return new IpcMessage { Kind = IpcKind.StatusReply, Locked = d.IsLocked, Reason = d.Reason };
+                return new IpcMessage
+                {
+                    Kind = IpcKind.StatusReply,
+                    Locked = d.IsLocked,
+                    Reason = d.Reason,
+                    MinutesUntilLock = d.IsLocked ? -1 : _controller.MinutesUntilLock()
+                };
             }
             case IpcKind.SubmitPin:
             {

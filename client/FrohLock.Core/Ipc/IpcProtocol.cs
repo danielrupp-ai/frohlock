@@ -25,4 +25,6 @@ public sealed class IpcMessage
     public int UnlockMinutes { get; set; }
     public long ServerTimeUnix { get; set; }
     public int PinFailuresRemaining { get; set; }
+    /// <summary>Minuten bis zum nächsten Sperrbeginn (für die Schlafenszeit-Erinnerung), -1 = keine.</summary>
+    public int MinutesUntilLock { get; set; } = -1;
 }

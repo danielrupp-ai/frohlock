@@ -5,8 +5,9 @@ namespace FrohLock.Agent;
 
 /// <summary>
 /// Overlay-Agent im Nutzerkontext. Fragt zyklisch den Dienst nach dem Sperrzustand,
-/// zeigt/versteckt das Vollbild-Overlay, schluckt Umgehungstasten und sendet
-/// Watchdog-Lebenszeichen. Enthält KEINE Sperrlogik/PIN – die liegt im Dienst.
+/// zeigt/versteckt das kindgerechte Overlay, schluckt Umgehungstasten (mit freundlicher
+/// Rückmeldung) und blendet vor der Sperre eine liebe Schlafenszeit-Erinnerung ein.
+/// Enthält KEINE Sperrlogik/PIN – die liegt im Dienst.
 /// </summary>
 public partial class App : Application
 {
@@ -17,9 +18,12 @@ public partial class App : Application
     private DispatcherTimer? _poll;
     private DispatcherTimer? _alive;
 
+    private const int ReminderThresholdMinutes = 15;
+    private DateTime _lastReminderUtc = DateTime.MinValue;
+    private int _lastReminderMinutes = -1;
+
     private void OnStartup(object sender, StartupEventArgs e)
     {
-        // Nur eine Instanz pro Sitzung.
         _singleInstance = new Mutex(true, "Local\\FrohLock.Agent.SingleInstance", out bool created);
         if (!created) { Shutdown(); return; }
 
@@ -29,6 +33,7 @@ public partial class App : Application
         _hook.Install();
 
         _lock = new LockWindow(_ipc);
+        _hook.OnBlockedKey = () => _lock?.ShowFriendlyBypass();
 
         _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _poll.Tick += async (_, _) => await PollAsync();
@@ -38,7 +43,6 @@ public partial class App : Application
         _alive.Tick += async (_, _) => { try { await _ipc.AliveAsync(); } catch { } };
         _alive.Start();
 
-        // Erste Abfrage sofort.
         _ = PollAsync();
     }
 
@@ -50,14 +54,32 @@ public partial class App : Application
         try
         {
             var status = await _ipc.GetStatusAsync();
-            // Kein Dienst erreichbar? Fail-Secure: Overlay stehen lassen, wenn es schon sichtbar ist.
             bool locked = status?.Locked ?? (_lock?.IsVisible ?? false);
 
             if (locked) ShowLock(status?.Reason ?? "");
-            else HideLock();
+            else
+            {
+                HideLock();
+                MaybeShowReminder(status?.MinutesUntilLock ?? -1);
+            }
         }
         catch { /* im Zweifel Overlay stehen lassen */ }
         finally { _polling = false; }
+    }
+
+    private void MaybeShowReminder(int minutesUntilLock)
+    {
+        if (minutesUntilLock <= 0 || minutesUntilLock > ReminderThresholdMinutes) return;
+
+        // Sanft erinnern: beim Eintritt ins Fenster und dann nur alle ~5 Minuten erneut.
+        bool crossedThreshold = _lastReminderMinutes < 0 || _lastReminderMinutes > ReminderThresholdMinutes;
+        bool longEnoughSince = (DateTime.UtcNow - _lastReminderUtc) > TimeSpan.FromMinutes(4.5);
+        _lastReminderMinutes = minutesUntilLock;
+
+        if (!crossedThreshold && !longEnoughSince) return;
+        _lastReminderUtc = DateTime.UtcNow;
+
+        try { new ReminderWindow(minutesUntilLock).Show(); } catch { }
     }
 
     private void ShowLock(string reason)
@@ -70,6 +92,7 @@ public partial class App : Application
             _lock.Activate();
         }
         if (_hook is not null) _hook.Active = true;
+        _lastReminderMinutes = -1; // nach der Sperre wieder erinnern dürfen
     }
 
     private void HideLock()

@@ -81,6 +81,14 @@ public class ScheduleEngineTests
     }
 
     [Fact]
+    public void MinutesUntilNextLockStart_counts_down_and_is_minus1_inside_window()
+    {
+        var e = new ScheduleEngine(Cfg(Win(21 * 60, 7 * 60))); // 21:00-07:00
+        Assert.Equal(90, e.MinutesUntilNextLockStart(At(19, 30)));   // 90 min vor 21:00
+        Assert.Equal(-1, e.MinutesUntilNextLockStart(At(23, 0)));    // schon Sperrzeit
+    }
+
+    [Fact]
     public void NextBoundary_finds_window_start()
     {
         var e = new ScheduleEngine(Cfg(Win(20 * 60, 22 * 60)));

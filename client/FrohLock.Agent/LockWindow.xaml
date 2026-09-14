@@ -3,32 +3,105 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="FrohLock" WindowStyle="None" ResizeMode="NoResize"
         ShowInTaskbar="False" Topmost="True" WindowStartupLocation="Manual"
-        Background="#0B1F3A" Foreground="White" Cursor="Arrow">
-  <Grid>
-    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="520">
-      <TextBlock Text="🔒" FontSize="72" HorizontalAlignment="Center" Margin="0,0,0,8"/>
-      <TextBlock Text="Gerät gesperrt" FontSize="34" FontWeight="Bold" HorizontalAlignment="Center"/>
-      <TextBlock x:Name="ReasonText" Text="" FontSize="16" Opacity="0.8"
-                 HorizontalAlignment="Center" Margin="0,8,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
-      <TextBlock x:Name="ClockText" Text="" FontSize="15" Opacity="0.6"
-                 HorizontalAlignment="Center" Margin="0,4,0,24"/>
+        Foreground="White" Cursor="Arrow">
+  <Window.Resources>
+    <Storyboard x:Key="TwinkleSb" RepeatBehavior="Forever" AutoReverse="True">
+      <DoubleAnimation Storyboard.TargetName="Star1" Storyboard.TargetProperty="Opacity" From="0.2" To="1" Duration="0:0:1.3"/>
+      <DoubleAnimation Storyboard.TargetName="Star2" Storyboard.TargetProperty="Opacity" From="1" To="0.3" Duration="0:0:1.7"/>
+      <DoubleAnimation Storyboard.TargetName="Star3" Storyboard.TargetProperty="Opacity" From="0.4" To="1" Duration="0:0:2.1"/>
+      <DoubleAnimation Storyboard.TargetName="Star4" Storyboard.TargetProperty="Opacity" From="1" To="0.2" Duration="0:0:1.1"/>
+      <DoubleAnimation Storyboard.TargetName="Star5" Storyboard.TargetProperty="Opacity" From="0.3" To="0.9" Duration="0:0:2.4"/>
+      <DoubleAnimation Storyboard.TargetName="Star6" Storyboard.TargetProperty="Opacity" From="0.9" To="0.3" Duration="0:0:1.9"/>
+    </Storyboard>
+    <Storyboard x:Key="MoonFloatSb" RepeatBehavior="Forever" AutoReverse="True">
+      <DoubleAnimation Storyboard.TargetName="MoonTransform" Storyboard.TargetProperty="Y"
+                       From="-8" To="10" Duration="0:0:3.5"/>
+    </Storyboard>
+    <Storyboard x:Key="BubbleSb">
+      <DoubleAnimation Storyboard.TargetName="BubbleScale" Storyboard.TargetProperty="ScaleX" From="0.6" To="1" Duration="0:0:0.25"/>
+      <DoubleAnimation Storyboard.TargetName="BubbleScale" Storyboard.TargetProperty="ScaleY" From="0.6" To="1" Duration="0:0:0.25"/>
+      <DoubleAnimation Storyboard.TargetName="BubbleBorder" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.2"/>
+    </Storyboard>
+  </Window.Resources>
 
-      <Border Background="#13294B" CornerRadius="12" Padding="24" >
+  <Window.Triggers>
+    <EventTrigger RoutedEvent="Window.Loaded">
+      <BeginStoryboard Storyboard="{StaticResource TwinkleSb}"/>
+      <BeginStoryboard Storyboard="{StaticResource MoonFloatSb}"/>
+    </EventTrigger>
+  </Window.Triggers>
+
+  <Grid>
+    <Grid.Background>
+      <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#0B1A4A" Offset="0"/>
+        <GradientStop Color="#243B8F" Offset="0.55"/>
+        <GradientStop Color="#5B3E9E" Offset="1"/>
+      </LinearGradientBrush>
+    </Grid.Background>
+
+    <!-- Sterne -->
+    <Canvas>
+      <TextBlock x:Name="Star1" Text="⭐" FontSize="26" Canvas.Left="140" Canvas.Top="120" Opacity="0.7"/>
+      <TextBlock x:Name="Star2" Text="✨" FontSize="34" Canvas.Left="330" Canvas.Top="70" Opacity="0.9"/>
+      <TextBlock x:Name="Star3" Text="⭐" FontSize="20" Canvas.Left="620" Canvas.Top="160" Opacity="0.6"/>
+      <TextBlock x:Name="Star4" Text="✨" FontSize="28" Canvas.Left="880" Canvas.Top="90" Opacity="0.8"/>
+      <TextBlock x:Name="Star5" Text="⭐" FontSize="22" Canvas.Left="1080" Canvas.Top="200" Opacity="0.7"/>
+      <TextBlock x:Name="Star6" Text="✨" FontSize="30" Canvas.Left="480" Canvas.Top="230" Opacity="0.6"/>
+    </Canvas>
+
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640">
+      <!-- Mond + Tiere -->
+      <TextBlock Text="🌙" FontSize="120" HorizontalAlignment="Center">
+        <TextBlock.RenderTransform>
+          <TranslateTransform x:Name="MoonTransform"/>
+        </TextBlock.RenderTransform>
+      </TextBlock>
+      <TextBlock Text="🦉  🐻  😴" FontSize="48" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+
+      <TextBlock x:Name="HeadingText" Text="Gute Nacht!" FontSize="46" FontWeight="Bold"
+                 HorizontalAlignment="Center" Margin="0,12,0,4"/>
+      <TextBlock x:Name="FriendlyText"
+                 Text="Jetzt ist Schlafenszeit. Der Laptop macht auch ein Nickerchen. 💤"
+                 FontSize="20" Opacity="0.92" HorizontalAlignment="Center"
+                 TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,6"/>
+      <TextBlock x:Name="ClockText" Text="" FontSize="15" Opacity="0.6" HorizontalAlignment="Center"/>
+
+      <!-- Freundliche Sprechblase bei Umgehungsversuch -->
+      <Border x:Name="BubbleBorder" Background="#FFD166" CornerRadius="18" Padding="16,10"
+              HorizontalAlignment="Center" Margin="0,18,0,0" Opacity="0" Visibility="Collapsed">
+        <Border.RenderTransform>
+          <ScaleTransform x:Name="BubbleScale" CenterX="0" CenterY="0" ScaleX="1" ScaleY="1"/>
+        </Border.RenderTransform>
+        <TextBlock x:Name="BubbleText" Text="" Foreground="#5A3E00" FontSize="17" FontWeight="SemiBold"
+                   TextWrapping="Wrap" TextAlignment="Center" MaxWidth="520"/>
+      </Border>
+
+      <!-- Eltern-Bereich (dezent) -->
+      <Border Background="#22FFFFFF" CornerRadius="14" Padding="18" Margin="0,34,0,0" MaxWidth="380"
+              HorizontalAlignment="Center">
         <StackPanel>
-          <TextBlock Text="PIN der Eltern zum Entsperren:" FontSize="14" Margin="0,0,0,8"/>
-          <PasswordBox x:Name="PinBox" FontSize="22" Padding="10" MaxLength="32"
-                       Background="#0B1F3A" Foreground="White" CaretBrush="White"
-                       KeyDown="PinBox_KeyDown"/>
-          <Button x:Name="UnlockButton" Content="Entsperren" FontSize="16" Margin="0,12,0,0"
-                  Padding="10,8" Click="UnlockButton_Click" Background="#2E7D32" Foreground="White"
-                  BorderThickness="0"/>
-          <TextBlock x:Name="FeedbackText" Text="" FontSize="13" Foreground="#FF8A80"
-                     HorizontalAlignment="Center" Margin="0,10,0,0" TextWrapping="Wrap"/>
+          <TextBlock Text="🔒 Nur für Eltern" FontSize="13" Opacity="0.85" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+          <PasswordBox x:Name="PinBox" FontSize="20" Padding="10" MaxLength="32"
+                       Background="#33101B3A" Foreground="White" CaretBrush="White"
+                       BorderBrush="#55FFFFFF" KeyDown="PinBox_KeyDown"/>
+          <Button x:Name="UnlockButton" Content="Entsperren" FontSize="15" Margin="0,10,0,0"
+                  Padding="10,8" Click="UnlockButton_Click" Foreground="White" BorderThickness="0"
+                  Cursor="Hand">
+            <Button.Background>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Color="#2E7D32" Offset="0"/>
+                <GradientStop Color="#43A047" Offset="1"/>
+              </LinearGradientBrush>
+            </Button.Background>
+          </Button>
+          <TextBlock x:Name="FeedbackText" Text="" FontSize="13" Foreground="#FFD2CC"
+                     HorizontalAlignment="Center" Margin="0,8,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
         </StackPanel>
       </Border>
 
-      <TextBlock Text="FrohLock – Bildschirmzeit-Schutz" FontSize="11" Opacity="0.4"
-                 HorizontalAlignment="Center" Margin="0,24,0,0"/>
+      <TextBlock Text="FrohLock – schlaf schön und träum was Schönes 🌟" FontSize="12" Opacity="0.45"
+                 HorizontalAlignment="Center" Margin="0,22,0,0"/>
     </StackPanel>
   </Grid>
 </Window>
