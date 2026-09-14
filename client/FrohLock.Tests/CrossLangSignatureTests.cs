@@ -15,9 +15,11 @@ public class CrossLangSignatureTests
     [Fact]
     public void Python_signed_config_and_command_verify_in_dotnet()
     {
+        // Bevorzugt frisch erzeugte Datei (lokal), sonst die eingecheckte Fixture (CI).
         var path = Environment.GetEnvironmentVariable("FROHLOCK_XLANG_JSON");
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            return; // weicher Skip
+            path = Path.Combine(AppContext.BaseDirectory, "fixtures", "python_signed.json");
+        Assert.True(File.Exists(path), $"Cross-Language-Fixture fehlt: {path}");
 
         var doc = Json.Deserialize<System.Text.Json.JsonElement>(File.ReadAllText(path));
         var verifier = new RsaSignatureVerifier(EmbeddedKeys.SigningPublicKeyPem);

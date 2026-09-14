@@ -1,0 +1,15 @@
+<Window x:Class="FrohLock.Setup.PinPromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FrohLock – PIN erforderlich" Height="200" Width="380"
+        Background="#0F1720" WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
+  <StackPanel Margin="22">
+    <TextBlock Text="Zum Entfernen von FrohLock den Eltern-PIN eingeben:"
+               Foreground="#EEF2F7" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <PasswordBox x:Name="PinBox" Padding="8" MaxLength="32" KeyDown="PinBox_KeyDown"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+      <Button Content="Abbrechen" Padding="12,6" Margin="0,0,8,0" Click="Cancel_Click"/>
+      <Button Content="OK" Padding="16,6" Background="#2E7D32" Foreground="White" BorderThickness="0" Click="Ok_Click"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
