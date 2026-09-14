@@ -32,6 +32,14 @@ class Settings:
         # Session-Signaturschlüssel für das Admin-Cookie.
         self.session_secret: str = os.getenv("FROHLOCK_SESSION_SECRET", secrets.token_hex(32))
 
+        # E-Mail-Versand (PIN-Reset). Ohne Host wird der Link nur geloggt.
+        self.smtp_host: str = os.getenv("FROHLOCK_SMTP_HOST", "")
+        self.smtp_port: int = int(os.getenv("FROHLOCK_SMTP_PORT", "587"))
+        self.smtp_user: str = os.getenv("FROHLOCK_SMTP_USER", "")
+        self.smtp_password: str = os.getenv("FROHLOCK_SMTP_PASSWORD", "")
+        self.smtp_from: str = os.getenv("FROHLOCK_SMTP_FROM", "FrohLock <noreply@froehlichdienste.de>")
+        self.smtp_starttls: bool = os.getenv("FROHLOCK_SMTP_STARTTLS", "1") not in ("0", "false", "")
+
         # Aktuelles Client-Update.
         self.update_version: str = os.getenv("FROHLOCK_UPDATE_VERSION", "")
         self.update_url: str = os.getenv("FROHLOCK_UPDATE_URL", "")

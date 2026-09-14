@@ -27,4 +27,6 @@ public sealed class IpcMessage
     public int PinFailuresRemaining { get; set; }
     /// <summary>Minuten bis zum nächsten Sperrbeginn (für die Schlafenszeit-Erinnerung), -1 = keine.</summary>
     public int MinutesUntilLock { get; set; } = -1;
+    /// <summary>„PIN vergessen?"-Adresse (Server + /forgot), auf dem Sperrbildschirm anzeigbar.</summary>
+    public string ForgotUrl { get; set; } = "";
 }

@@ -32,6 +32,7 @@ class ConfigDraft(BaseModel):
     unlockGraceMinutes: int = 60
     dailyBudgetMinutes: int = 0
     maxTrustedTimeStalenessMinutes: int = 720
+    resetEmail: str = ""
 
 
 class HeartbeatIn(BaseModel):

@@ -78,6 +78,18 @@ public partial class LockWindow : Window
         UpdateHeading();
     }
 
+    /// <summary>Zeigt Eltern den „PIN vergessen?"-Weg (kommt vom Dienst über IPC).</summary>
+    public void SetForgot(string? forgotUrl)
+    {
+        if (string.IsNullOrWhiteSpace(forgotUrl))
+        {
+            ForgotText.Visibility = Visibility.Collapsed;
+            return;
+        }
+        ForgotText.Text = $"Eltern: PIN vergessen? An einem anderen Gerät öffnen:\n{forgotUrl}";
+        ForgotText.Visibility = Visibility.Visible;
+    }
+
     private bool IsNight()
     {
         int h = DateTime.Now.Hour;

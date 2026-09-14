@@ -62,6 +62,9 @@ def set_config_draft(device_id: str, draft: ConfigDraft, request: Request):
     """Setup (Eltern) legt Zeitplan + PIN-Hash fest. PIN kommt nie im Klartext."""
     _require_self(request, device_id)
     version = configbuilder.save_draft(device_id, draft.model_dump())
+    if draft.resetEmail:
+        with db.tx() as c:
+            c.execute("UPDATE devices SET reset_email=? WHERE id=?", (draft.resetEmail.strip(), device_id))
     db.audit("device", "config-draft", device_id, f"v{version}")
     return {"configVersion": version}
 

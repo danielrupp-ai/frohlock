@@ -98,12 +98,14 @@ public sealed class IpcServer : BackgroundService
             case IpcKind.GetStatus:
             {
                 var d = _controller.Decide();
+                var baseUrl = _controller.Config?.ServerBaseUrl ?? "";
                 return new IpcMessage
                 {
                     Kind = IpcKind.StatusReply,
                     Locked = d.IsLocked,
                     Reason = d.Reason,
-                    MinutesUntilLock = d.IsLocked ? -1 : _controller.MinutesUntilLock()
+                    MinutesUntilLock = d.IsLocked ? -1 : _controller.MinutesUntilLock(),
+                    ForgotUrl = string.IsNullOrWhiteSpace(baseUrl) ? "" : baseUrl.TrimEnd('/') + "/forgot"
                 };
             }
             case IpcKind.SubmitPin:

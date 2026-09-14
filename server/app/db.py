@@ -58,7 +58,20 @@ CREATE TABLE IF NOT EXISTS audit (
     action TEXT NOT NULL,
     detail TEXT
 );
+
+CREATE TABLE IF NOT EXISTS reset_tokens (
+    token TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used INTEGER DEFAULT 0
+);
 """
+
+# Leichte Migrationen für bestehende DBs.
+MIGRATIONS = [
+    "ALTER TABLE devices ADD COLUMN reset_email TEXT",
+]
 
 
 def _connect() -> sqlite3.Connection:
@@ -75,6 +88,11 @@ _conn = _connect()
 def init_db() -> None:
     with _lock:
         _conn.executescript(SCHEMA)
+        for stmt in MIGRATIONS:
+            try:
+                _conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # Spalte existiert bereits
         _conn.commit()
 
 

@@ -33,6 +33,7 @@ public partial class MainWindow : Window
             DaysPanel.Children.Add(cb);
         }
         WindowsList.ItemsSource = _windows;
+        ServerUrlBox.Text = Branding.DefaultServerBaseUrl;
     }
 
     public sealed class WindowItem
@@ -151,6 +152,7 @@ public partial class MainWindow : Window
         try
         {
             var (hash, salt) = PinHasher.Hash(pin);
+            var email = EmailBox.Text.Trim();
             var draft = new
             {
                 windows = _windows.Select(w => new
@@ -166,7 +168,8 @@ public partial class MainWindow : Window
                 pinIterations = PinHasher.DefaultIterations,
                 unlockGraceMinutes = 60,
                 dailyBudgetMinutes = 0,
-                maxTrustedTimeStalenessMinutes = 720
+                maxTrustedTimeStalenessMinutes = 720,
+                resetEmail = email
             };
 
             using var http = TlsPinning.CreateClient(Array.Empty<string>(), TimeSpan.FromSeconds(20));
@@ -177,6 +180,10 @@ public partial class MainWindow : Window
                 SaveStatus.Foreground = System.Windows.Media.Brushes.LightGreen;
                 SaveStatus.Text = "Gespeichert ✓  Der Schutzdienst übernimmt die Einstellungen in Kürze. " +
                                   "Du kannst dieses Fenster schließen.";
+                ForgotInfo.Text = string.IsNullOrWhiteSpace(email)
+                    ? $"Tipp: Falls du den PIN vergisst, kannst du ihn hier zurücksetzen:\n{_serverUrl}/forgot"
+                    : $"Falls du den PIN vergisst, setze ihn hier zurück – ein Link geht an {email}:\n{_serverUrl}/forgot";
+                ForgotBox.Visibility = Visibility.Visible;
             }
             else
             {

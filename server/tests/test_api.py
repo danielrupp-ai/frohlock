@@ -119,6 +119,53 @@ def test_foreign_device_rejected(client):
     assert client.get(f"/devices/{dev['deviceId']}/config").status_code == 401
 
 
+def test_pin_reset_by_email_flow(client):
+    _admin_login(client)
+    client.post("/admin/pairing", data={"device_name": "Reset-Laptop"}, follow_redirects=False)
+    import app.db as dbmod
+    code = dbmod.query("SELECT code FROM pairing_codes")[0]["code"]
+    dev = client.post("/devices/register", json={"pairingCode": code, "deviceName": "Reset-Laptop"}).json()
+    device_id, token = dev["deviceId"], dev["token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # Setup legt Config + Reset-E-Mail an.
+    draft = {
+        "windows": [{"days": [], "startMinute": 1260, "endMinute": 420, "enabled": True}],
+        "pinHash": "YWx0", "pinSalt": "c2FsdA==", "pinIterations": 210000,
+        "resetEmail": "Eltern@example.de",
+    }
+    assert client.post(f"/devices/{device_id}/config-draft", json=draft, headers=auth).status_code == 200
+    v1 = configbuilder_version(device_id)
+
+    # /forgot -> Token wird angelegt (case-insensitive)
+    r = client.post("/forgot", data={"email": "eltern@example.de"}, follow_redirects=False)
+    assert r.status_code == 200
+    trow = dbmod.query("SELECT token FROM reset_tokens WHERE device_id=?", (device_id,))
+    assert len(trow) == 1
+    tok = trow[0]["token"]
+
+    # Reset-Seite erreichbar, dann neuen PIN setzen
+    assert client.get(f"/reset/{tok}").status_code == 200
+    r = client.post(f"/reset/{tok}", data={"pin": "4321"}, follow_redirects=False)
+    assert r.status_code == 200
+
+    # Config-Version wurde erhöht, PIN-Hash hat sich geändert
+    v2 = configbuilder_version(device_id)
+    assert v2 > v1
+    new_cfg = client.get(f"/devices/{device_id}/config?have=0", headers=auth).json()
+    import base64, json
+    cfg = json.loads(base64.b64decode(new_cfg["payloadBase64"]))
+    assert cfg["pinHash"] != "YWx0"
+
+    # Token ist verbraucht -> zweiter Versuch ungültig (kein 500)
+    assert client.get(f"/reset/{tok}").status_code == 200  # zeigt "ungültig"-Seite
+
+
+def configbuilder_version(device_id):
+    from app.configbuilder import current_version
+    return current_version(device_id)
+
+
 def test_used_pairing_code_rejected(client):
     _admin_login(client)
     client.post("/admin/pairing", data={"device_name": "A"}, follow_redirects=False)

@@ -56,7 +56,11 @@ public partial class App : Application
             var status = await _ipc.GetStatusAsync();
             bool locked = status?.Locked ?? (_lock?.IsVisible ?? false);
 
-            if (locked) ShowLock(status?.Reason ?? "");
+            if (locked)
+            {
+                _lock?.SetForgot(status?.ForgotUrl);
+                ShowLock(status?.Reason ?? "");
+            }
             else
             {
                 HideLock();

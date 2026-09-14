@@ -97,6 +97,9 @@
           </Button>
           <TextBlock x:Name="FeedbackText" Text="" FontSize="13" Foreground="#FFD2CC"
                      HorizontalAlignment="Center" Margin="0,8,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
+          <TextBlock x:Name="ForgotText" Text="" FontSize="12" Foreground="#CFE0FF" Opacity="0.85"
+                     HorizontalAlignment="Center" Margin="0,10,0,0" TextWrapping="Wrap" TextAlignment="Center"
+                     Visibility="Collapsed"/>
         </StackPanel>
       </Border>
 
