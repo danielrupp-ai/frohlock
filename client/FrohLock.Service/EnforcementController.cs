@@ -235,7 +235,9 @@ public sealed class EnforcementController
                 LastBootUnix = _state.LastBootUnix,
                 UsageMinutesToday = _state.UsageMinutesToday(localNow),
                 DailyBudgetMinutes = _config?.EffectiveDailyBudget(localNow.DayOfWeek) ?? 0,
-                UsageDay = localNow.ToString("yyyy-MM-dd")
+                UsageDay = localNow.ToString("yyyy-MM-dd"),
+                AgentAliveAgeSeconds = _lastAgentAliveUtc == DateTime.MinValue
+                    ? -1 : (int)(DateTime.UtcNow - _lastAgentAliveUtc).TotalSeconds
             };
         }
     }

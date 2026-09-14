@@ -17,4 +17,7 @@ public sealed class DeviceStatus
     public int UsageMinutesToday { get; set; }
     public int DailyBudgetMinutes { get; set; }
     public string UsageDay { get; set; } = "";
+
+    /// <summary>Sekunden seit letztem Overlay-Agent-Lebenszeichen; -1 = nie/kein Agent (Diagnose).</summary>
+    public int AgentAliveAgeSeconds { get; set; } = -1;
 }

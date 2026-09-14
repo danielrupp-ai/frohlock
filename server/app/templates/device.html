@@ -14,6 +14,12 @@
     {% if dev["trusted_time_age"] is not none %} · Zeit-Alter {{ dev["trusted_time_age"] }} s{% endif %}
   </p>
   {% if dev["lock_reason"] %}<p class="muted">Grund: {{ dev["lock_reason"] }}</p>{% endif %}
+  {% set aa = dev["agent_age"] if "agent_age" in dev.keys() else -1 %}
+  <p class="muted">Overlay-Anzeige:
+    {% if aa is none or aa < 0 %}<span style="color:#ff8a80">❌ nicht aktiv (Sperre würde nicht angezeigt!)</span>
+    {% elif aa <= 120 %}<span style="color:#69f0ae">✓ aktiv</span>
+    {% else %}<span style="color:#ffab40">⚠ vor {{ aa }} s zuletzt aktiv</span>{% endif %}
+  </p>
   {% if not has_pin %}<p style="color:#ffab40">⚠ Für dieses Gerät ist noch kein PIN gesetzt – bis dahin ist es fail-secure gesperrt.</p>{% endif %}
 </div>
 

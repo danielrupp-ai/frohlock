@@ -2,7 +2,7 @@
 ; Wird von der CI mit iscc kompiliert. Payload liegt unter installer\payload\.
 
 #ifndef AppVersion
-  #define AppVersion "0.9.0"
+  #define AppVersion "0.10.0"
 #endif
 
 #define AppName "FrohLock"
@@ -68,15 +68,19 @@ Filename: "{sys}\reg.exe"; Parameters: "add ""HKLM\SYSTEM\CurrentControlSet\Cont
 Filename: "{sys}\reg.exe"; Parameters: "add ""HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{#ServiceName}"" /ve /t REG_SZ /d Service /f"; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden waituntilterminated
 
-; 3) Overlay-Agent bei JEDEM Logon (im Nutzerkontext) starten.
-Filename: "{sys}\schtasks.exe"; Parameters: "/Create /TN ""{#AgentTask}"" /TR ""\""{app}\FrohLockAgent.exe\"""" /SC ONLOGON /RL LIMITED /F"; Flags: runhidden waituntilterminated
+; 3) Overlay-Agent bei JEDEM Logon (ALLE Benutzer, in ihrer Sitzung) starten – HKLM\Run.
+Filename: "{sys}\reg.exe"; Parameters: "add ""HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"" /v FrohLockAgent /t REG_SZ /d ""\""{app}\FrohLockAgent.exe\"""" /f"; Flags: runhidden waituntilterminated
 
-; 4) Direkt die Eltern-Einrichtung öffnen.
+; 4) Overlay SOFORT in der aktuellen Sitzung starten (kein Neustart/Logout nötig).
+Filename: "{app}\FrohLockAgent.exe"; Flags: nowait
+
+; 5) Direkt die Eltern-Einrichtung öffnen.
 Filename: "{app}\FrohLockSetup.exe"; Description: "FrohLock jetzt einrichten"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 ; Reihenfolge: Task weg, Dienst stoppen + entfernen (vor dem Löschen der Dateien).
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""{#AgentTask}"" /F"; Flags: runhidden; RunOnceId: "DelTask"
+Filename: "{sys}\reg.exe"; Parameters: "delete ""HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"" /v FrohLockAgent /f"; Flags: runhidden; RunOnceId: "DelRun"
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im FrohLockAgent.exe"; Flags: runhidden; RunOnceId: "KillAgent"
 Filename: "{sys}\sc.exe"; Parameters: "stop {#ServiceName}"; Flags: runhidden; RunOnceId: "StopSvc"
 Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden; RunOnceId: "DelSvc"
@@ -93,6 +97,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var rc: Integer;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im FrohLockAgent.exe', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN "{#AgentTask}" /F', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Exec(ExpandConstant('{sys}\sc.exe'), 'delete {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Sleep(1500);

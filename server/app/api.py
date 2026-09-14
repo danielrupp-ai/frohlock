@@ -76,10 +76,10 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
         c.execute(
             """UPDATE devices SET last_seen=?, app_version=?, reported_config_version=?,
                    locked=?, lock_reason=?, trusted_time_age=?, pin_failures=?,
-                   usage_today=?, budget_minutes=? WHERE id=?""",
+                   usage_today=?, budget_minutes=?, agent_age=? WHERE id=?""",
             (int(time.time()), hb.appVersion, hb.configVersion, 1 if hb.currentlyLocked else 0,
              hb.lockReason, hb.trustedTimeAgeSeconds, hb.pinFailuresToday,
-             hb.usageMinutesToday, hb.dailyBudgetMinutes, device_id),
+             hb.usageMinutesToday, hb.dailyBudgetMinutes, hb.agentAliveAgeSeconds, device_id),
         )
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
