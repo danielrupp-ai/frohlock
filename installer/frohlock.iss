@@ -2,7 +2,7 @@
 ; Wird von der CI mit iscc kompiliert. Payload liegt unter installer\payload\.
 
 #ifndef AppVersion
-  #define AppVersion "0.8.0"
+  #define AppVersion "0.9.0"
 #endif
 
 #define AppName "FrohLock"
@@ -28,6 +28,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 WizardStyle=modern
 UninstallDisplayName={#AppName} (Bildschirmzeit-Schutz)
+; FrohLock NICHT in "Apps & Features" listen -> keine System-Deinstallation.
+; Entfernen nur über die PIN-gesicherte Verknüpfung "FrohLock deinstallieren".
+CreateUninstallRegKey=no
 SetupIconFile=
 
 [Languages]

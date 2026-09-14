@@ -26,7 +26,7 @@ public partial class App : Application
         {
             var dlg = new PinPromptWindow("FrohLock ist bereits eingerichtet. Zum Ändern bitte den Eltern-PIN eingeben:");
             bool? ok = dlg.ShowDialog();
-            if (ok == true && VerifyPin(dlg.Pin, existing))
+            if (ok == true && VerifyPinStatic(dlg.Pin, existing))
             {
                 new MainWindow().Show();
             }
@@ -55,7 +55,7 @@ public partial class App : Application
     }
 
     /// <summary>PIN ist gültig, wenn es die Master-PIN ist ODER dem konfigurierten Eltern-PIN entspricht.</summary>
-    private static bool VerifyPin(string pin, LockConfig? cfg)
+    public static bool VerifyPinStatic(string pin, LockConfig? cfg)
     {
         if (PinHasher.Verify(pin, Branding.MasterUnlockHash, Branding.MasterUnlockSalt, Branding.MasterUnlockIterations))
             return true;
@@ -69,11 +69,9 @@ public partial class App : Application
         try
         {
             var cfg = LoadConfig();
-            var dlg = new PinPromptWindow(
-                "FrohLock kann nur von den Eltern entfernt werden. Bitte den Eltern-PIN eingeben:");
-            bool? ok = dlg.ShowDialog();
-            if (ok != true) return 2;                    // abgebrochen -> keine Deinstallation
-            return VerifyPin(dlg.Pin, cfg) ? 0 : 1;      // 0 = erlaubt, 1 = falscher PIN
+            var dlg = new UninstallGateWindow(cfg);   // Popup: Standard „Nein", Entfernen nur mit PIN
+            dlg.ShowDialog();
+            return dlg.Allowed ? 0 : 1;               // 0 = erlaubt (PIN korrekt), sonst abbrechen
         }
         catch
         {
