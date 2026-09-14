@@ -43,6 +43,8 @@ jobs:
     runs-on: windows-latest
     needs: [ test-dotnet, test-server ]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
     env:
       SIGNING_PUBLIC_KEY: ${{ secrets.SIGNING_PUBLIC_KEY }}
     steps:
