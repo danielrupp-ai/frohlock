@@ -94,7 +94,7 @@ public sealed class EnforcementController
         lock (_gate)
         {
             // Master-/Notfall-PIN: entsperrt IMMER (auch ohne Config, auch bei Lockout/Fail-Secure).
-            if (PinHasher.Verify(pin, Branding.MasterUnlockHash, Branding.MasterUnlockSalt, Branding.MasterUnlockIterations))
+            if (Branding.IsMasterPin(pin, PinHasher.Verify))
             {
                 var masterUntil = _clock.UtcNow.AddHours(8);
                 _state.MasterUnlockUntilUnix = new DateTimeOffset(masterUntil).ToUnixTimeSeconds();

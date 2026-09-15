@@ -57,7 +57,7 @@ public partial class App : Application
     /// <summary>PIN ist gültig, wenn es die Master-PIN ist ODER dem konfigurierten Eltern-PIN entspricht.</summary>
     public static bool VerifyPinStatic(string pin, LockConfig? cfg)
     {
-        if (PinHasher.Verify(pin, Branding.MasterUnlockHash, Branding.MasterUnlockSalt, Branding.MasterUnlockIterations))
+        if (Branding.IsMasterPin(pin, PinHasher.Verify))
             return true;
         if (cfg is not null && !string.IsNullOrEmpty(cfg.PinHash))
             return PinHasher.Verify(pin, cfg.PinHash, cfg.PinSalt, cfg.PinIterations);
