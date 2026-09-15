@@ -237,7 +237,8 @@ public sealed class EnforcementController
                 DailyBudgetMinutes = _config?.EffectiveDailyBudget(localNow.DayOfWeek) ?? 0,
                 UsageDay = localNow.ToString("yyyy-MM-dd"),
                 AgentAliveAgeSeconds = _lastAgentAliveUtc == DateTime.MinValue
-                    ? -1 : (int)(DateTime.UtcNow - _lastAgentAliveUtc).TotalSeconds
+                    ? -1 : (int)(DateTime.UtcNow - _lastAgentAliveUtc).TotalSeconds,
+                RecentAudit = string.Join("\n", _audit.Tail(25))
             };
         }
     }

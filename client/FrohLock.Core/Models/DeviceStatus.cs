@@ -20,4 +20,7 @@ public sealed class DeviceStatus
 
     /// <summary>Sekunden seit letztem Overlay-Agent-Lebenszeichen; -1 = nie/kein Agent (Diagnose).</summary>
     public int AgentAliveAgeSeconds { get; set; } = -1;
+
+    /// <summary>Letzte Ereignis-Protokollzeilen des Geräts (Diagnose, serverseitig einsehbar).</summary>
+    public string RecentAudit { get; set; } = "";
 }

@@ -50,3 +50,4 @@ class HeartbeatIn(BaseModel):
     dailyBudgetMinutes: int = 0
     usageDay: str = ""
     agentAliveAgeSeconds: int = -1
+    recentAudit: str = ""

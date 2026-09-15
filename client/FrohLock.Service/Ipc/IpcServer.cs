@@ -10,12 +10,14 @@ using Microsoft.Extensions.Logging;
 namespace FrohLock.Service.Ipc;
 
 /// <summary>
-/// Named-Pipe-Server. Der Overlay-Agent fragt hier Status ab und reicht PIN-Versuche ein.
-/// PIN-Prüfung passiert im Dienst (LocalSystem). Pipe-ACL: nur authentifizierte Nutzer,
-/// die Prüfung/Autorisierung erfolgt inhaltlich (kein Vertrauen in den Agent-Prozess).
+/// Named-Pipe-Server (robustes Mehr-Instanzen-Muster). Der Overlay-Agent fragt hier Status
+/// ab und reicht PIN-Versuche ein. PIN-Prüfung passiert im Dienst (LocalSystem).
+/// Es steht IMMER eine Pipe-Instanz zum Verbinden bereit (kein „Drain"-Loch mehr).
 /// </summary>
 public sealed class IpcServer : BackgroundService
 {
+    private const int MaxServerInstances = 16; // genug für Poll + Alive + PIN gleichzeitig
+
     private readonly EnforcementController _controller;
     private readonly ILogger<IpcServer> _log;
     private readonly Action _onAgentAlive;
@@ -31,48 +33,49 @@ public sealed class IpcServer : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            NamedPipeServerStream? server = null;
             try
             {
-                using var server = CreatePipe();
+                server = CreatePipe();
                 await server.WaitForConnectionAsync(stoppingToken).ConfigureAwait(false);
-                _ = HandleClientAsync(server, stoppingToken); // eine Verbindung nach der anderen ist ok; Overlay pollt seriell
-                // Auf Abschluss warten, damit wir eine frische Pipe-Instanz öffnen.
-                await DrainAsync(server, stoppingToken).ConfigureAwait(false);
+                // Diese Verbindung eigenständig bedienen; sofort weiter die nächste Instanz öffnen.
+                _ = HandleAndDisposeAsync(server, stoppingToken);
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                server?.Dispose();
+                break;
+            }
             catch (Exception ex)
             {
-                _log.LogWarning(ex, "IPC-Schleife Fehler");
-                await Task.Delay(500, stoppingToken).ContinueWith(_ => { }).ConfigureAwait(false);
+                _log.LogWarning(ex, "IPC-Accept Fehler");
+                server?.Dispose();
+                try { await Task.Delay(500, stoppingToken).ConfigureAwait(false); } catch { }
             }
         }
-    }
-
-    private static async Task DrainAsync(NamedPipeServerStream server, CancellationToken ct)
-    {
-        // Kleiner Puffer, bis die Verbindung geschlossen ist.
-        while (server.IsConnected && !ct.IsCancellationRequested)
-            await Task.Delay(50, ct).ConfigureAwait(false);
     }
 
     private static NamedPipeServerStream CreatePipe()
     {
         var pipeSecurity = new PipeSecurity();
-        // Authentifizierte Nutzer dürfen verbinden (der Agent läuft im Nutzerkontext),
-        // SYSTEM/Administratoren volle Rechte. Inhaltlich vertrauen wir dem Agent nicht.
+        // Breite Verbindungsrechte (Inhalt ist nicht sensibel; PIN wird serverseitig geprüft,
+        // dem Agent wird inhaltlich nicht vertraut). Schließt ACL-/Integritäts-Probleme aus.
         pipeSecurity.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            new SecurityIdentifier(WellKnownSidType.WorldSid, null),
             PipeAccessRights.ReadWrite, AccessControlType.Allow));
         pipeSecurity.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             PipeAccessRights.FullControl, AccessControlType.Allow));
+        pipeSecurity.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            PipeAccessRights.FullControl, AccessControlType.Allow));
 
         return NamedPipeServerStreamAcl.Create(
-            AppPaths.PipeName, PipeDirection.InOut, 1,
+            AppPaths.PipeName, PipeDirection.InOut, MaxServerInstances,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, pipeSecurity);
     }
 
-    private async Task HandleClientAsync(NamedPipeServerStream server, CancellationToken ct)
+    private async Task HandleAndDisposeAsync(NamedPipeServerStream server, CancellationToken ct)
     {
         try
         {
@@ -80,14 +83,22 @@ public sealed class IpcServer : BackgroundService
             using var writer = new StreamWriter(server, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
 
             string? line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
-            if (line is null) return;
-            var msg = Json.Deserialize<IpcMessage>(line) ?? new IpcMessage();
-            var reply = Handle(msg);
-            await writer.WriteLineAsync(Json.Serialize(reply)).ConfigureAwait(false);
+            if (line is not null)
+            {
+                var msg = Json.Deserialize<IpcMessage>(line) ?? new IpcMessage();
+                var reply = Handle(msg);
+                await writer.WriteLineAsync(Json.Serialize(reply).AsMemory(), ct).ConfigureAwait(false);
+                await writer.FlushAsync(ct).ConfigureAwait(false);
+                try { server.WaitForPipeDrain(); } catch { } // sicherstellen, dass der Agent die Antwort liest
+            }
         }
         catch (Exception ex)
         {
             _log.LogDebug(ex, "IPC-Client Fehler");
+        }
+        finally
+        {
+            try { server.Dispose(); } catch { }
         }
     }
 

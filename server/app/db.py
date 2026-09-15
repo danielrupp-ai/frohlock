@@ -81,6 +81,7 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN usage_today INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN budget_minutes INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN agent_age INTEGER DEFAULT -1",
+    "ALTER TABLE devices ADD COLUMN recent_audit TEXT",
 ]
 
 
