@@ -1,14 +1,18 @@
-using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
 
 namespace FrohLock.Core.Time;
 
 /// <summary>
-/// Liefert eine gegen lokale Uhr-Manipulation resistente Zeit:
-///   Vertrauenszeit = letzte per Netz ermittelte Zeit + monoton gemessene Laufzeit (Stopwatch).
-/// Die lokale Windows-Uhr wird für Enforcement NICHT verwendet.
-/// Anti-Rollback: eine persistierte "last good"-Zeit wird nie unterschritten.
+/// Liefert eine gegen Manipulation abgesicherte, aber alltagstaugliche Zeit:
+///   Grundlage ist die System-Uhr (läuft auch durch Schlaf/Standby korrekt weiter)
+///   + eine NTP-Korrektur (Offset). Zusätzlich ein „Boden" (Floor): die Zeit kann
+///   ohne NTP nie ZURÜCK laufen (Schutz gegen Uhr-Zurückstellen). Ein erfolgreicher
+///   NTP-Sync ist maßgeblich und korrigiert Manipulation in beide Richtungen.
+///
+/// Warum nicht rein monoton? Ein monotoner Zähler (QPC/TickCount) zählt die Schlafzeit
+/// NICHT mit → nach dem Aufwachen „hängt" die Zeit und Sperren enden zu spät. Die
+/// System-Uhr springt durch den Schlaf korrekt; Manipulation fangen Floor + NTP ab.
 /// </summary>
 public sealed class TrustedTimeProvider : ITrustedClock
 {
@@ -18,10 +22,11 @@ public sealed class TrustedTimeProvider : ITrustedClock
     private readonly Func<string?> _serverBaseUrlProvider;
     private readonly HttpClient _http;
 
-    private DateTime _anchorUtc;          // per Netz bestätigte Zeit
-    private long _anchorTs;               // Stopwatch-Zeitstempel zum Anker
-    private DateTime _lastSyncUtc;        // wann zuletzt erfolgreich synchronisiert (in Vertrauenszeit)
-    private bool _hasNetworkTime;
+    private TimeSpan _offset = TimeSpan.Zero;   // NTP-UTC - System-UTC
+    private DateTime _floorUtc = DateTime.MinValue;
+    private DateTime _lastSyncTrustedUtc = DateTime.MinValue;
+    private DateTime _lastPersistedFloor = DateTime.MinValue;
+    private bool _hasSynced;
 
     public TrustedTimeProvider(
         string statePath,
@@ -44,7 +49,7 @@ public sealed class TrustedTimeProvider : ITrustedClock
 
     public bool HasTime
     {
-        get { lock (_gate) return _hasNetworkTime || _anchorUtc != default; }
+        get { lock (_gate) return _hasSynced || _floorUtc != DateTime.MinValue; }
     }
 
     public DateTime UtcNow
@@ -53,10 +58,16 @@ public sealed class TrustedTimeProvider : ITrustedClock
         {
             lock (_gate)
             {
-                if (_anchorUtc == default)
-                    return DateTime.UtcNow; // Notnagel; Enforcement behandelt große Age als Fail-Secure
-                var elapsed = Stopwatch.GetElapsedTime(_anchorTs);
-                return _anchorUtc + elapsed;
+                var raw = DateTime.UtcNow + _offset;
+                var t = raw > _floorUtc ? raw : _floorUtc;  // nie unter den Boden (Anti-Rückstellen)
+                if (t > _floorUtc) _floorUtc = t;
+                // Boden gelegentlich persistieren (nicht bei jedem Aufruf).
+                if (_floorUtc - _lastPersistedFloor > TimeSpan.FromMinutes(5))
+                {
+                    _lastPersistedFloor = _floorUtc;
+                    PersistFloor(_floorUtc);
+                }
+                return t;
             }
         }
     }
@@ -67,13 +78,15 @@ public sealed class TrustedTimeProvider : ITrustedClock
         {
             lock (_gate)
             {
-                if (!_hasNetworkTime) return TimeSpan.MaxValue;
-                return UtcNow - _lastSyncUtc;
+                if (!_hasSynced) return TimeSpan.MaxValue;
+                // Alter = reale Zeit seit letztem NTP-Sync (System-Uhr läuft durch Schlaf mit).
+                var age = (DateTime.UtcNow + _offset) - _lastSyncTrustedUtc;
+                return age < TimeSpan.Zero ? TimeSpan.Zero : age;
             }
         }
     }
 
-    /// <summary>Versucht Netz-Zeit zu holen (NTP zuerst, dann HTTPS-Date). Gibt true bei Erfolg.</summary>
+    /// <summary>Holt Netz-Zeit (NTP, dann HTTPS-Date) und macht sie maßgeblich. True bei Erfolg.</summary>
     public async Task<bool> SyncAsync(CancellationToken ct = default)
     {
         var t = await QueryNtpAsync(ct).ConfigureAwait(false)
@@ -82,17 +95,13 @@ public sealed class TrustedTimeProvider : ITrustedClock
 
         lock (_gate)
         {
-            var candidate = t.Value;
-            // Anti-Rollback: akzeptiere keine Zeit deutlich vor unserer bisherigen Vertrauenszeit.
-            var floor = _anchorUtc == default ? DateTime.MinValue : UtcNow.AddMinutes(-5);
-            if (candidate < floor)
-                candidate = floor;
-
-            _anchorUtc = candidate;
-            _anchorTs = Stopwatch.GetTimestamp();
-            _lastSyncUtc = candidate;
-            _hasNetworkTime = true;
-            PersistFloor(candidate);
+            var ntpUtc = t.Value;
+            _offset = ntpUtc - DateTime.UtcNow;   // System-Uhr-Korrektur
+            _floorUtc = ntpUtc;                   // NTP ist maßgeblich (korrigiert Manipulation in BEIDE Richtungen)
+            _lastSyncTrustedUtc = ntpUtc;
+            _hasSynced = true;
+            _lastPersistedFloor = ntpUtc;
+            PersistFloor(ntpUtc);
         }
         return true;
     }
@@ -129,12 +138,10 @@ public sealed class TrustedTimeProvider : ITrustedClock
             using var doc = JsonDocument.Parse(File.ReadAllText(_statePath));
             if (doc.RootElement.TryGetProperty("lastGoodUnix", out var el))
             {
-                var floor = DateTimeOffset.FromUnixTimeSeconds(el.GetInt64()).UtcDateTime;
-                // Als monotoner Boden: setze Anker auf floor, aber markiere NICHT als frischen Netz-Sync.
-                _anchorUtc = floor;
-                _anchorTs = Stopwatch.GetTimestamp();
-                _lastSyncUtc = floor;
-                _hasNetworkTime = false; // erzwingt frühen Sync; Age ist bis dahin MaxValue
+                _floorUtc = DateTimeOffset.FromUnixTimeSeconds(el.GetInt64()).UtcDateTime;
+                _lastPersistedFloor = _floorUtc;
+                // Noch kein frischer NTP-Sync -> Age = MaxValue erzwingt frühen Sync.
+                _hasSynced = false;
             }
         }
         catch { }

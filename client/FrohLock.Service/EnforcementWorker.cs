@@ -37,6 +37,7 @@ public sealed class EnforcementWorker : BackgroundService
     private DateTime _lastTimeSyncAttemptUtc = DateTime.MinValue;
     private DateTime _lastAgentCheckUtc = DateTime.MinValue;
     private DateTime _lastUsageSaveUtc = DateTime.MinValue;
+    private DateTime _lastLoopSystemUtc = DateTime.MinValue;
 
     public EnforcementWorker(EnforcementController controller, SignedConfigStore configStore,
         TrustedTimeProvider time, RsaSignatureVerifier verifier, AuditLog audit, RuntimeState state,
@@ -67,9 +68,16 @@ public sealed class EnforcementWorker : BackgroundService
             {
                 var now = DateTime.UtcNow;
 
-                if ((now - _lastTimeSyncAttemptUtc) > TimeSpan.FromMinutes(TimeSyncIntervalMinutes()))
+                // Aufwachen aus Schlaf/Standby erkennen: die Schleife war viel länger als ein Tick weg
+                // -> sofort neu synchronisieren, damit die Zeit (und damit die Sperre) stimmt.
+                bool wokeUp = _lastLoopSystemUtc != DateTime.MinValue
+                              && (now - _lastLoopSystemUtc) > TimeSpan.FromSeconds(TickSeconds * 3 + 30);
+                _lastLoopSystemUtc = now;
+
+                if (wokeUp || (now - _lastTimeSyncAttemptUtc) > TimeSpan.FromMinutes(TimeSyncIntervalMinutes()))
                 {
                     _lastTimeSyncAttemptUtc = now;
+                    if (wokeUp) _audit.Write("TIME", "Aufwachen erkannt – erzwinge Zeit-Sync");
                     _ = SafeSyncTimeAsync(ct);
                 }
 
