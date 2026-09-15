@@ -91,6 +91,24 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
     return {"ok": True}
 
 
+def _version_tuple(v: str) -> tuple:
+    parts = []
+    for p in (v or "0").split("."):
+        try:
+            parts.append(int(p))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+
+
+def _version_older(current: str, target: str) -> bool:
+    a, b = _version_tuple(current), _version_tuple(target)
+    n = max(len(a), len(b))
+    a = a + (0,) * (n - len(a))
+    b = b + (0,) * (n - len(b))
+    return a < b
+
+
 @router.get("/devices/{device_id}/commands")
 def get_commands(device_id: str, request: Request):
     _require_self(request, device_id)
@@ -103,6 +121,17 @@ def get_commands(device_id: str, request: Request):
     for r in rows:
         payload = json.loads(r["payload_json"])
         out.append(payload["envelope"])
+
+    # Selbst-nachlieferndes Update: solange das Gerät eine ÄLTERE Version meldet, bei JEDEM
+    # Poll erneut ein Update-Kommando anbieten (robust gegen abgebrochene Downloads bei wackligem Netz).
+    try:
+        if settings.update_version and settings.update_url and settings.update_sha256:
+            dev = db.query_one("SELECT app_version FROM devices WHERE id=?", (device_id,))
+            if dev and _version_older(dev["app_version"] or "0", settings.update_version):
+                from .signing import sign_command
+                out.append(sign_command(device_id, "update", expires_in=3600)["envelope"])
+    except Exception:
+        pass
     return out
 
 
