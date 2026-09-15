@@ -2,7 +2,7 @@
 ; Wird von der CI mit iscc kompiliert. Payload liegt unter installer\payload\.
 
 #ifndef AppVersion
-  #define AppVersion "0.12.0"
+  #define AppVersion "0.13.0"
 #endif
 
 #define AppName "FrohLock"
@@ -60,6 +60,8 @@ Filename: "{sys}\icacls.exe"; \
 
 ; 2) Dienst anlegen (Autostart), beschreiben, Recovery = immer neu starten.
 Filename: "{sys}\sc.exe"; Parameters: "create {#ServiceName} binPath= ""\""{app}\FrohLockService.exe\"""" start= auto DisplayName= ""FrohLock Schutzdienst"""; Flags: runhidden waituntilterminated
+; Bei Upgrades existiert der Dienst schon (create scheitert dann harmlos) -> Pfad/Autostart sicher setzen.
+Filename: "{sys}\sc.exe"; Parameters: "config {#ServiceName} binPath= ""\""{app}\FrohLockService.exe\"""" start= auto"; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "description {#ServiceName} ""Bildschirmzeit-Schutz fuer Kinder (FrohLock)."""; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "failure {#ServiceName} reset= 0 actions= restart/5000/restart/5000/restart/5000"; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "failureflag {#ServiceName} 1"; Flags: runhidden waituntilterminated
@@ -99,7 +101,7 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im FrohLockAgent.exe', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN "{#AgentTask}" /F', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, rc);
-  Exec(ExpandConstant('{sys}\sc.exe'), 'delete {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  { Dienst NICHT loeschen -> ein halbes Update kann ihn nicht mehr verschwinden lassen. }
   Sleep(1500);
   Result := '';
 end;
