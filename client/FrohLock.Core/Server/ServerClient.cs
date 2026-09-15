@@ -16,6 +16,14 @@ public sealed class ServerClient
     private readonly string _deviceId;
     private readonly string? _token;
 
+    /// <summary>Date-Header der letzten Server-Antwort (Netz-Zeitquelle, wenn NTP blockiert ist).</summary>
+    public DateTimeOffset? LastServerDateUtc { get; private set; }
+
+    private void Capture(HttpResponseMessage resp)
+    {
+        if (resp.Headers.Date is { } d) LastServerDateUtc = d;
+    }
+
     public ServerClient(HttpClient http, string baseUrl, string deviceId, string? token)
     {
         _http = http;
@@ -44,6 +52,7 @@ public sealed class ServerClient
     {
         using var resp = await _http.GetAsync($"{_baseUrl}/devices/{_deviceId}/config?have={haveVersion}", ct)
             .ConfigureAwait(false);
+        Capture(resp);
         if (resp.StatusCode == System.Net.HttpStatusCode.NotModified) return null;
         if (!resp.IsSuccessStatusCode) return null;
         var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -65,7 +74,7 @@ public sealed class ServerClient
         var body = Json.Serialize(status);
         using var resp = await _http.PostAsync($"{_baseUrl}/devices/{_deviceId}/heartbeat",
             new StringContent(body, Encoding.UTF8, "application/json"), ct).ConfigureAwait(false);
-        _ = resp;
+        Capture(resp);
     }
 
     /// <summary>Holt ausstehende, signierte Fernbefehle.</summary>

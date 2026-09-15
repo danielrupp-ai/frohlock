@@ -190,6 +190,10 @@ public sealed class EnforcementWorker : BackgroundService
         }
         catch (Exception ex) { _log.LogDebug(ex, "GetConfig Fehler"); }
 
+        // Zeit aus dem erfolgreichen Server-Kontakt übernehmen (robust, wenn NTP blockiert ist).
+        if (client.LastServerDateUtc is { } serverDate)
+            _time.AcceptNetworkTime(serverDate.UtcDateTime);
+
         // 2) Befehle
         try
         {

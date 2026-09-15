@@ -19,7 +19,12 @@ public sealed class ScheduleEngine
     {
         // 1) Fail-Secure: Vertrauenszeit zu alt -> im Zweifel sperren.
         if (trustedTimeAge > TimeSpan.FromMinutes(_config.MaxTrustedTimeStalenessMinutes))
-            return LockDecision.Locked($"Vertrauenszeit zu alt ({(int)trustedTimeAge.TotalMinutes} min) – Fail-Secure");
+        {
+            string alt = trustedTimeAge == TimeSpan.MaxValue
+                ? "noch nie synchronisiert"
+                : $"{(long)Math.Min(trustedTimeAge.TotalMinutes, 9_999_999)} min";
+            return LockDecision.Locked($"Vertrauenszeit zu alt ({alt}) – Fail-Secure");
+        }
 
         // 2) Aktive Entsperrung hat Vorrang, aber nur wenn nicht ohnehin sperrfrei.
         if (unlockUntilLocal is { } until && localNow < until)

@@ -92,18 +92,27 @@ public sealed class TrustedTimeProvider : ITrustedClock
         var t = await QueryNtpAsync(ct).ConfigureAwait(false)
                 ?? await QueryHttpsDateAsync(ct).ConfigureAwait(false);
         if (t is null) return false;
+        AcceptNetworkTime(t.Value);
+        return true;
+    }
 
+    /// <summary>
+    /// Übernimmt eine extern ermittelte Netz-Zeit (z. B. den Date-Header eines erfolgreichen
+    /// Server-Kontakts). Damit synchronisiert die Zeit auch dann, wenn NTP und der separate
+    /// HTTPS-HEAD im Netz des Geräts blockiert sind – solange der Server überhaupt erreichbar ist.
+    /// </summary>
+    public void AcceptNetworkTime(DateTime networkUtc)
+    {
+        if (networkUtc == default) return;
         lock (_gate)
         {
-            var ntpUtc = t.Value;
-            _offset = ntpUtc - DateTime.UtcNow;   // System-Uhr-Korrektur
-            _floorUtc = ntpUtc;                   // NTP ist maßgeblich (korrigiert Manipulation in BEIDE Richtungen)
-            _lastSyncTrustedUtc = ntpUtc;
+            _offset = networkUtc - DateTime.UtcNow;   // System-Uhr-Korrektur
+            _floorUtc = networkUtc;                   // Netz-Zeit ist maßgeblich
+            _lastSyncTrustedUtc = networkUtc;
             _hasSynced = true;
-            _lastPersistedFloor = ntpUtc;
-            PersistFloor(ntpUtc);
+            _lastPersistedFloor = networkUtc;
+            PersistFloor(networkUtc);
         }
-        return true;
     }
 
     private async Task<DateTime?> QueryNtpAsync(CancellationToken ct)
