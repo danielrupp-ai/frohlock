@@ -34,6 +34,7 @@ public sealed class EnforcementWorker : BackgroundService
 
     private const int TickSeconds = 5;
     private DateTime _lastServerPollUtc = DateTime.MinValue;
+    private DateTime _lastCmdPollUtc = DateTime.MinValue;
     private DateTime _lastTimeSyncAttemptUtc = DateTime.MinValue;
     private DateTime _lastAgentCheckUtc = DateTime.MinValue;
     private DateTime _lastUsageSaveUtc = DateTime.MinValue;
@@ -86,6 +87,12 @@ public sealed class EnforcementWorker : BackgroundService
                 {
                     _lastServerPollUtc = now;
                     await PollServerAsync(pollCtx, ct).ConfigureAwait(false);
+                }
+                // Schnelle Befehls-Abfrage: Fern-Sperren/-Entsperren wirkt in ~5 s statt erst beim langsamen Poll.
+                else if (pollCtx is not null && (now - _lastCmdPollUtc) > TimeSpan.FromSeconds(5))
+                {
+                    _lastCmdPollUtc = now;
+                    await PollCommandsFastAsync(pollCtx, ct).ConfigureAwait(false);
                 }
 
                 if ((now - _lastAgentCheckUtc) > TimeSpan.FromSeconds(15))
@@ -214,6 +221,30 @@ public sealed class EnforcementWorker : BackgroundService
         // 3) Heartbeat
         try { await client.HeartbeatAsync(_controller.BuildStatus(AppVersion), ct).ConfigureAwait(false); }
         catch (Exception ex) { _log.LogDebug(ex, "Heartbeat Fehler"); }
+    }
+
+    /// <summary>Nur Befehle holen/ausführen (schnell, alle ~5 s). Updates bleiben dem langsamen Poll überlassen.</summary>
+    private async Task PollCommandsFastAsync(PollContext ctx, CancellationToken ct)
+    {
+        var token = ReadToken();
+        if (string.IsNullOrEmpty(token)) return;
+        try
+        {
+            using var http = TlsPinning.CreateClient(ctx.TlsPins, TimeSpan.FromSeconds(10));
+            var client = new ServerClient(http, ctx.BaseUrl, ctx.DeviceId, token);
+            var cmds = await client.GetCommandsAsync(ct).ConfigureAwait(false);
+            foreach (var env in cmds)
+            {
+                var cmd = _verifier.OpenAs<DeviceCommand>(env);
+                if (cmd is null) continue;
+                if (cmd.Type == CommandType.Update) continue; // Updates macht der langsame Poll
+                if (cmd.ExpiresAtUnix > 0 && cmd.ExpiresAtUnix < DateTimeOffset.UtcNow.ToUnixTimeSeconds()) continue;
+                await ExecuteCommandAsync(cmd, ctx, client, ctx.ConfigVersion, ct).ConfigureAwait(false);
+                try { await client.AckCommandAsync(cmd.CommandId, ct).ConfigureAwait(false); } catch { }
+            }
+            if (client.LastServerDateUtc is { } d) _time.AcceptNetworkTime(d.UtcDateTime);
+        }
+        catch (Exception ex) { _log.LogDebug(ex, "Schnelle Befehls-Abfrage Fehler"); }
     }
 
     private async Task ExecuteCommandAsync(DeviceCommand cmd, PollContext ctx, ServerClient client,
