@@ -17,6 +17,8 @@ public partial class LockWindow : Window
     private bool _busy;
     private DateTime _lastBubbleUtc = DateTime.MinValue;
     private int _msgIndex;
+    private bool _budgetMode;
+    private string _budgetLimitText = "Bildschirmzeit";
 
     // Liebe, ruhige Nachrichten (rotieren).
     private static readonly string[] NightMessages =
@@ -34,6 +36,15 @@ public partial class LockWindow : Window
         "Kurze Pause für den Laptop! 🌼 Zeit für etwas anderes.",
         "Jetzt ist gerade Pause. Vielleicht ein bisschen spielen? 🧸",
         "Der Laptop ruht sich kurz aus. 🌈 Bis später!",
+    };
+
+    // Tageslimit erreicht (2 Stunden für heute aufgebraucht).
+    private static readonly string[] BudgetMessages =
+    {
+        "Deine {L} für heute sind aufgebraucht. 🌟 Morgen gibt's wieder neue Zeit!",
+        "Für heute ist genug! ⏰ Zeit für etwas anderes – bis morgen!",
+        "Zeit ist um! 🎮➡️🌳 Morgen wartet frische Bildschirmzeit.",
+        "Gut gespielt! 🙌 Das Tageslimit ist erreicht – morgen geht's weiter.",
     };
 
     // Freundliche Sprüche, wenn ein Umgehungsversuch erkannt wird.
@@ -74,8 +85,30 @@ public partial class LockWindow : Window
 
     public void SetReason(string reason)
     {
-        // Grund wird im Hintergrund gehalten, aber dem Kind zeigen wir freundliche Texte.
+        bool newBudget = !string.IsNullOrEmpty(reason) && reason.Contains("Tageslimit");
+        if (newBudget) _budgetLimitText = LimitTextFrom(reason);
+        bool modeChanged = newBudget != _budgetMode;
+        _budgetMode = newBudget;
         UpdateHeading();
+        if (modeChanged) { _msgIndex = -1; RotateMessage(); } // sofort passende Nachricht + Symbol
+    }
+
+    // Aus "Tageslimit erreicht (606/120 min)" den Limit-Text machen: 120 -> "2 Stunden".
+    private static string LimitTextFrom(string reason)
+    {
+        try
+        {
+            int slash = reason.IndexOf('/');
+            if (slash >= 0)
+            {
+                var digits = new string(reason[(slash + 1)..].SkipWhile(c => !char.IsDigit(c))
+                    .TakeWhile(char.IsDigit).ToArray());
+                if (int.TryParse(digits, out int m) && m > 0)
+                    return m % 60 == 0 ? (m / 60 == 1 ? "1 Stunde" : $"{m / 60} Stunden") : $"{m} Minuten";
+            }
+        }
+        catch { }
+        return "Bildschirmzeit";
     }
 
     /// <summary>Zeigt Eltern den „PIN vergessen?"-Weg (kommt vom Dienst über IPC).</summary>
@@ -98,22 +131,31 @@ public partial class LockWindow : Window
 
     private void UpdateHeading()
     {
-        if (IsNight())
+        if (_budgetMode)
+        {
+            HeadingText.Text = "Zeit ist um für heute!";
+            BigEmoji.Text = "⏰";
+            CrittersText.Text = "🎮  ➡️  🌳";
+        }
+        else if (IsNight())
         {
             HeadingText.Text = "Gute Nacht!";
+            BigEmoji.Text = "🌙";
+            CrittersText.Text = "🦉  🐻  😴";
         }
         else
         {
             HeadingText.Text = "Kurze Pause!";
-            FriendlyText.Text = DayMessages[0];
+            BigEmoji.Text = "🌤️";
+            CrittersText.Text = "🧸  🌈  🌼";
         }
     }
 
     private void RotateMessage()
     {
-        var pool = IsNight() ? NightMessages : DayMessages;
+        var pool = _budgetMode ? BudgetMessages : (IsNight() ? NightMessages : DayMessages);
         _msgIndex = (_msgIndex + 1) % pool.Length;
-        FriendlyText.Text = pool[_msgIndex];
+        FriendlyText.Text = pool[_msgIndex].Replace("{L}", _budgetLimitText);
     }
 
     /// <summary>Wird vom Tastatur-Hook aufgerufen, wenn eine Umgehungstaste geschluckt wurde.</summary>
