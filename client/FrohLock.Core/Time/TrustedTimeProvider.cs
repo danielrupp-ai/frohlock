@@ -72,19 +72,15 @@ public sealed class TrustedTimeProvider : ITrustedClock
         }
     }
 
-    public TimeSpan Age
-    {
-        get
-        {
-            lock (_gate)
-            {
-                if (!_hasSynced) return TimeSpan.MaxValue;
-                // Alter = reale Zeit seit letztem NTP-Sync (System-Uhr läuft durch Schlaf mit).
-                var age = (DateTime.UtcNow + _offset) - _lastSyncTrustedUtc;
-                return age < TimeSpan.Zero ? TimeSpan.Zero : age;
-            }
-        }
-    }
+    /// <summary>
+    /// Nativ-Betrieb: Die System-Uhr gilt IMMER als aktuell – FrohLock funktioniert komplett
+    /// OHNE Internet. Deshalb ist die „Zeit" nie „zu alt" (kein Fail-Secure wegen fehlendem Netz).
+    /// Manipulation nach HINTEN fängt der Floor ab; nach VORNE korrigiert der nächste Online-Sync.
+    /// </summary>
+    public TimeSpan Age => TimeSpan.Zero;
+
+    /// <summary>Wurde schon einmal eine Netz-Zeit bestätigt? (nur fürs Sync-Intervall, nicht fürs Sperren)</summary>
+    public bool HasSynced { get { lock (_gate) return _hasSynced; } }
 
     /// <summary>Holt Netz-Zeit (NTP, dann HTTPS-Date) und macht sie maßgeblich. True bei Erfolg.</summary>
     public async Task<bool> SyncAsync(CancellationToken ct = default)

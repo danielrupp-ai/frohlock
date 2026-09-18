@@ -126,8 +126,9 @@ public sealed class EnforcementWorker : BackgroundService
 
     private int TimeSyncIntervalMinutes()
     {
-        // Häufiger synchronisieren, solange noch keine frische Netzzeit vorliegt.
-        return _time.HasTime && _time.Age < TimeSpan.FromHours(2) ? 30 : 3;
+        // Häufiger synchronisieren, solange noch nie eine Netzzeit bestätigt wurde
+        // (korrigiert eine evtl. verstellte Uhr, sobald Internet da ist). Danach seltener.
+        return _time.HasSynced ? 30 : 3;
     }
 
     private async Task SafeSyncTimeAsync(CancellationToken ct)
