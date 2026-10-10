@@ -29,6 +29,87 @@ def _hhmm(minute: int) -> str:
     return f"{minute // 60:02d}:{minute % 60:02d}"
 
 
+# Gleiche Farben wie die Zeitleiste auf dem Kinder-Sperrbildschirm (UsageTimelineView.cs).
+_BLOCK_COLORS = ["#FFB74D", "#4DD0E1", "#F06292", "#9CCC65", "#BA68C8", "#FFD54F"]
+_WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+
+def _fmt_minutes(m: int) -> str:
+    """120 -> "2 Std", 75 -> "1 Std 15 Min", 40 -> "40 Min" (wie beim Kind)."""
+    if m < 60:
+        return f"{m} Min"
+    h, r = divmod(m, 60)
+    return f"{h} Std" if r == 0 else f"{h} Std {r} Min"
+
+
+def _berlin_now():
+    import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo("Europe/Berlin"))
+    except Exception:
+        return datetime.datetime.now()
+
+
+def _effective_budget(draft: dict, weekday_py: int) -> int:
+    """Tageslimit wie im Client: Wochentag-Wert (0=So..6=Sa) > 0 überschreibt den Standard."""
+    wb = ((draft.get("dailyBudgetByWeekday") or []) + [0] * 7)[:7]
+    v = wb[(weekday_py + 1) % 7]
+    return v if v > 0 else int(draft.get("dailyBudgetMinutes") or 0)
+
+
+def _timeline(segments: list, minutes: int, budget: int, now_minute: int | None) -> dict:
+    """Baut die Zeitleiste „von wann bis wann" – dieselbe Logik wie auf dem Sperrbildschirm."""
+    segs = []
+    for seg in segments or []:
+        try:
+            start, end = int(seg.get("startMinute", 0)), int(seg.get("endMinute", 0))
+        except (TypeError, ValueError):
+            continue
+        segs.append({"start": seg.get("start", _hhmm(start)), "end": seg.get("end", _hhmm(end)),
+                     "start_min": start, "end_min": max(end, start + 1),
+                     "minutes": max(1, int(seg.get("minutes", 0) or 0))})
+    segs.sort(key=lambda x: x["start_min"])
+
+    ref = now_minute if now_minute is not None else (segs[-1]["end_min"] if segs else 12 * 60)
+    first = min([x["start_min"] for x in segs] + [ref])
+    last = max([x["end_min"] for x in segs] + [ref])
+    axis_start = min(first, 8 * 60) // 60 * 60
+    axis_end = min(1440, (max(last, 20 * 60) + 59) // 60 * 60)
+    span = max(60, axis_end - axis_start)
+
+    def pct(m):
+        return round((m - axis_start) * 100 / span, 2)
+
+    for i, x in enumerate(segs):
+        x["color"] = _BLOCK_COLORS[i % len(_BLOCK_COLORS)]
+        x["left"] = pct(x["start_min"])
+        x["width"] = max(0.6, pct(x["end_min"]) - pct(x["start_min"]))
+        x["label"] = _fmt_minutes(x["minutes"])
+
+    step = 120 if span > 10 * 60 else 60
+    ticks = [{"left": pct(m), "label": f"{m // 60} Uhr"} for m in range(axis_start, axis_end + 1, step)]
+
+    sum_segs = sum(x["minutes"] for x in segs)
+    earlier = minutes - sum_segs
+    parts = ([earlier] if earlier >= 2 else []) + [x["minutes"] for x in segs]
+    if 2 <= len(parts) <= 8:
+        calc = "Zusammengerechnet: " + " + ".join(_fmt_minutes(p) for p in parts) + " = " + _fmt_minutes(minutes)
+    elif not segs and minutes == 0:
+        calc = "An diesem Tag wurde keine Bildschirmzeit gezählt."
+    else:
+        calc = ""
+    return {
+        "segments": segs, "ticks": ticks, "total": _fmt_minutes(minutes), "minutes": minutes,
+        "budget": budget, "budget_label": _fmt_minutes(budget) if budget > 0 else "",
+        "over": budget > 0 and minutes >= budget,
+        "earlier": _fmt_minutes(earlier) if earlier >= 2 else "",
+        "no_times": minutes > 0 and not segs,
+        "calc": calc,
+        "now_left": pct(now_minute) if now_minute is not None and axis_start <= now_minute <= axis_end else None,
+    }
+
+
 def _to_min(hhmm: str) -> int:
     h, m = hhmm.split(":")
     return int(h) * 60 + int(m)
@@ -99,37 +180,52 @@ def device_detail(request: Request, device_id: str):
         w["dayLabels"] = ", ".join(lbl for d, lbl in DAYS if d in w.get("days", [])) or "täglich"
     audit_rows = db.query("SELECT * FROM audit WHERE device_id=? ORDER BY ts DESC LIMIT 30", (device_id,))
 
-    # Nutzung: letzte 7 Tage (0 auffüllen, wo nichts gemeldet).
+    # Nutzung: letzte 14 Tage (0 auffüllen, wo nichts gemeldet), Tag per ?day= wählbar.
     import datetime
-    rows = db.query("SELECT day, minutes FROM usage_daily WHERE device_id=?", (device_id,))
-    by_day = {r["day"]: r["minutes"] for r in rows}
-    today = datetime.date.today()
+    rows = db.query("SELECT * FROM usage_daily WHERE device_id=?", (device_id,))
+    by_day = {r["day"]: r for r in rows}
+    now_berlin = _berlin_now()
+    today = now_berlin.date()
+    today_key = today.strftime("%Y-%m-%d")
+    sel_key = request.query_params.get("day") or today_key
     usage_week = []
-    for i in range(6, -1, -1):
+    for i in range(13, -1, -1):
         d = today - datetime.timedelta(days=i)
         key = d.strftime("%Y-%m-%d")
-        usage_week.append({"day": d.strftime("%a %d.%m."), "minutes": by_day.get(key, 0)})
-    max_min = max([u["minutes"] for u in usage_week] + [1])
+        r = by_day.get(key)
+        usage_week.append({"day": f"{_WEEKDAYS[d.weekday()][:2]} {d:%d.%m}", "key": key,
+                           "minutes": r["minutes"] if r else 0,
+                           "budget": (r["budget"] if r and r["budget"] else _effective_budget(draft, d.weekday())),
+                           "selected": key == sel_key})
+    max_min = max([u["minutes"] for u in usage_week] + [u["budget"] for u in usage_week] + [1])
     budget = draft.get("dailyBudgetMinutes", 0)
+
+    # Zeitleiste des gewählten Tages – gleiche Darstellung wie beim Kind auf dem Sperrbildschirm.
+    try:
+        sel_date = datetime.date.fromisoformat(sel_key)
+    except ValueError:
+        sel_date, sel_key = today, today_key
+    sel_row = by_day.get(sel_key)
+    sel_segments = []
+    if sel_row is not None and sel_row["segments_json"]:
+        try:
+            sel_segments = json.loads(sel_row["segments_json"])
+        except ValueError:
+            sel_segments = []
+    sel_budget = (sel_row["budget"] if sel_row is not None and sel_row["budget"]
+                  else _effective_budget(draft, sel_date.weekday()))
+    is_today = sel_key == today_key
+    timeline = _timeline(sel_segments, sel_row["minutes"] if sel_row is not None else 0, sel_budget,
+                         now_berlin.hour * 60 + now_berlin.minute if is_today else None)
+    timeline["title"] = ("Heute" if is_today else
+                         ("Gestern" if sel_date == today - datetime.timedelta(days=1) else _WEEKDAYS[sel_date.weekday()])) \
+        + f", {sel_date:%d.%m.%Y}"
+    timeline["is_today"] = is_today
 
     # Wochentag-Budgets auf 7 Werte normalisieren (0=So..6=Sa) und als Mo..So-Liste anzeigen.
     wb = (draft.get("dailyBudgetByWeekday") or [])
     wb = (wb + [0] * 7)[:7]
     weekday_budgets = [{"idx": d, "label": lbl, "value": wb[d]} for d, lbl in DAYS]
-
-    # Von wann bis wann heute genutzt (meldet der Client seit v0.19.0).
-    usage_segments = []
-    if "usage_segments" in dev.keys() and dev["usage_segments"]:
-        try:
-            for seg in json.loads(dev["usage_segments"]):
-                start, end = int(seg.get("startMinute", 0)), int(seg.get("endMinute", 0))
-                usage_segments.append({
-                    "start": seg.get("start", ""), "end": seg.get("end", ""),
-                    "minutes": int(seg.get("minutes", 0)),
-                    "left": start * 100 / 1440, "width": max(0.4, (end - start) * 100 / 1440),
-                })
-        except (ValueError, TypeError):
-            usage_segments = []
 
     return templates.TemplateResponse("device.html", {
         "request": request, "dev": dev, "version": version, "draft": draft,
@@ -137,7 +233,7 @@ def device_detail(request: Request, device_id: str):
         "has_pin": bool(draft.get("pinHash")),
         "usage_week": usage_week, "usage_max": max_min, "budget": budget,
         "weekday_budgets": weekday_budgets,
-        "usage_segments": usage_segments,
+        "timeline": timeline,
         "usage_today": dev["usage_today"] if "usage_today" in dev.keys() else 0,
     })
 

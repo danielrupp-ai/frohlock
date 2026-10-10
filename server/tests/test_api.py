@@ -198,9 +198,10 @@ def test_usage_tracking_and_device_page(client):
     assert row and row["minutes"] == 47
 
     # Admin-Detailseite rendert (kein Template-Fehler) und zeigt die Nutzung
-    r = client.get(f"/admin/devices/{device_id}")
+    r = client.get(f"/admin/devices/{device_id}?day=2026-09-14")
     assert r.status_code == 200
-    assert "47 min" in r.text
+    assert "47 Min" in r.text
+    assert "nur die Gesamtzeit" in r.text  # Alt-Tag ohne Uhrzeiten
     assert "Tageslimit" in r.text
 
 
@@ -237,7 +238,14 @@ def test_usage_timeline_in_admin(client):
           ]}
     assert client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth).status_code == 200
 
-    page = client.get(f"/admin/devices/{device_id}").text
-    assert "09:10–10:20 · 70 min" in page
-    assert "16:00–16:50 · 50 min" in page
+    page = client.get(f"/admin/devices/{device_id}?day=2026-10-10").text
+    assert "09:10 – 10:20" in page and "1 Std 10 Min" in page
+    assert "16:00 – 16:50" in page
+    assert "Zusammengerechnet: 1 Std 10 Min + 50 Min = 2 Std" in page
+    assert "von 2 Std" in page
     assert "keine Zeit gezählt" in page
+
+    # Tagesverlauf bleibt gespeichert: ein späterer Heartbeat ohne Abschnitte löscht sie nicht.
+    hb2 = dict(hb, usageSegments=[])
+    assert client.post(f"/devices/{device_id}/heartbeat", json=hb2, headers=auth).status_code == 200
+    assert "16:00 – 16:50" in client.get(f"/admin/devices/{device_id}?day=2026-10-10").text

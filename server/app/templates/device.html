@@ -23,6 +23,74 @@
   {% if not has_pin %}<p style="color:#ffab40">⚠ Für dieses Gerät ist noch kein PIN gesetzt – bis dahin ist es fail-secure gesperrt.</p>{% endif %}
 </div>
 
+<div class="card" id="zeit">
+  <h2>Bildschirmzeit</h2>
+  {% if "screen_active" in dev.keys() and dev["screen_active"] == 0 %}
+  <p class="muted" style="margin:0 0 10px">💤 Bildschirm gerade aus / zugeklappt / gesperrt – es wird keine Zeit gezählt.</p>
+  {% endif %}
+
+  {% set t = timeline %}
+  <div class="fl-tl">
+    <div class="fl-tl-day">{{ t.title }}</div>
+    <div class="fl-tl-title">{% if t.over %}So lange war {{ dev["name"].replace("Laptop ", "")|capitalize }} am Laptop:{% else %}Bildschirmzeit{% if t.is_today %} heute{% endif %}:{% endif %}</div>
+    <div class="fl-tl-head">
+      <span class="fl-tl-total">{{ t.total }}</span>
+      {% if t.budget_label %}<span class="fl-tl-sub">von {{ t.budget_label }} {% if t.is_today %}für heute{% else %}an diesem Tag{% endif %}</span>{% endif %}
+    </div>
+    <div class="fl-tl-track">
+      {% for x in t.segments %}
+      <div class="fl-tl-block" title="{{ x.start }} – {{ x.end }} · {{ x.label }}"
+           style="left:{{ x.left }}%;width:{{ x.width }}%;background:linear-gradient({{ x.color }}, {{ x.color }}cc)"></div>
+      {% endfor %}
+      {% if t.now_left is not none %}<div class="fl-tl-now" style="left:{{ t.now_left }}%"><span>jetzt</span></div>{% endif %}
+    </div>
+    <div class="fl-tl-axis">
+      {% for k in t.ticks %}<span style="left:{{ k.left }}%">{{ k.label }}</span>{% endfor %}
+    </div>
+    <div class="fl-tl-chips">
+      {% for x in t.segments %}
+      <span class="fl-tl-chip"><i style="background:{{ x.color }}"></i>🕐 {{ x.start }} – {{ x.end }} <b style="color:{{ x.color }}">· {{ x.label }}</b></span>
+      {% endfor %}
+      {% if t.earlier %}<span class="fl-tl-chip"><i style="background:#90A4AE"></i>⏳ ohne Uhrzeit (vor dem Update) <b style="color:#90A4AE">· {{ t.earlier }}</b></span>{% endif %}
+    </div>
+    {% if t.calc %}<div class="fl-tl-calc">{{ t.calc }}</div>{% endif %}
+    {% if t.no_times %}<div class="muted">Für diesen Tag gibt es nur die Gesamtzeit – Uhrzeiten werden seit Version 0.19.0 (10.10.2026) aufgezeichnet.</div>{% endif %}
+  </div>
+
+  <h3 style="margin:18px 0 8px">Letzte 14 Tage <span class="muted" style="font-weight:400">– Tag antippen für die Zeitleiste</span></h3>
+  <div style="display:flex;gap:2px;align-items:flex-end;height:130px">
+    {% for u in usage_week %}
+    <a href="?day={{ u.key }}#zeit" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end;text-decoration:none;color:inherit;border-radius:6px;{% if u.selected %}background:rgba(255,255,255,.08){% endif %}">
+      <div class="muted" style="font-size:9px">{{ u.minutes }}</div>
+      <div title="{{ u.minutes }} min{% if u.budget %} von {{ u.budget }}{% endif %}" style="width:70%;border-radius:5px 5px 0 0;background:{% if u.budget and u.minutes >= u.budget %}#e57373{% else %}#3457b4{% endif %};{% if u.selected %}outline:2px solid #fff;{% endif %}height:{{ [3, (u.minutes * 90 // usage_max)] | max }}px"></div>
+      <div class="muted" style="font-size:10px;text-align:center;line-height:1.2;white-space:nowrap;overflow-wrap:normal">{{ u.day.split(" ")[0] }}<br>{{ u.day.split(" ")[1] }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<style>
+  .fl-tl { overflow:hidden; background:linear-gradient(160deg,#0B1A4A,#243B8F 60%,#5B3E9E); border-radius:18px; padding:18px 20px 16px; color:#fff; }
+  .fl-tl-day { font-size:13px; opacity:.75; margin-bottom:2px; }
+  .fl-tl-title { font-size:17px; font-weight:600; }
+  .fl-tl-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:4px 0 12px; }
+  .fl-tl-total { font-size:30px; font-weight:700; }
+  .fl-tl-sub { font-size:15px; opacity:.85; }
+  .fl-tl-track { position:relative; height:34px; margin-top:20px; border-radius:10px; background:rgba(255,255,255,.15); }
+  .fl-tl-block { position:absolute; top:3px; bottom:3px; border-radius:7px; min-width:4px; }
+  .fl-tl-now { position:absolute; top:-4px; bottom:-4px; width:3px; margin-left:-1.5px; background:#fff; border-radius:2px; }
+  .fl-tl-now span { white-space:nowrap; position:absolute; top:-17px; left:50%; transform:translateX(-50%); font-size:11px; font-weight:700; }
+  .fl-tl-axis { position:relative; height:34px; font-size:11px; opacity:.75; }
+  .fl-tl-axis span { position:absolute; top:6px; transform:translateX(-50%); white-space:nowrap; }
+  .fl-tl-axis span:first-child { transform:none; }
+  .fl-tl-axis span:last-child { transform:translateX(-100%); }
+  .fl-tl-chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  .fl-tl-chip { max-width:100%; background:rgba(0,0,0,.2); border-radius:12px; padding:6px 12px; font-size:14px; display:inline-flex; align-items:center; gap:6px; }
+  .fl-tl-chip i { width:11px; height:11px; border-radius:50%; display:inline-block; }
+  .fl-tl-calc { color:#FFE082; font-size:14px; margin-top:10px; }
+  @media (max-width:520px) { .fl-tl-axis span:nth-child(even) { display:none; } .fl-tl-total { font-size:26px; } }
+</style>
+
 <div class="grid">
   <div class="card">
     <h2>Sperrzeiten</h2>
@@ -119,43 +187,6 @@
   </div>
 </div>
 
-<div class="card">
-  <h2>Bildschirmzeit</h2>
-  <div class="row" style="align-items:baseline">
-    <div style="font-size:30px;font-weight:700">{{ usage_today }} min</div>
-    <div class="muted">heute genutzt{% if budget and budget > 0 %} · Limit {{ budget }} min ({{ (budget // 60) }}:{{ '%02d' % (budget % 60) }} h){% else %} · kein Tageslimit{% endif %}</div>
-  </div>
-  {% if budget and budget > 0 %}
-  <div style="background:rgba(255,255,255,.1);border-radius:8px;height:14px;overflow:hidden;margin:8px 0 16px;max-width:420px">
-    <div style="height:100%;width:{{ [100, (usage_today * 100 // budget)] | min }}%;background:{% if usage_today >= budget %}#c62828{% elif usage_today * 100 // budget > 80 %}#f9a825{% else %}#43a047{% endif %}"></div>
-  </div>
-  {% endif %}
-  {% if usage_segments %}
-  <h3 style="margin:6px 0 8px">Heute von – bis</h3>
-  <div style="position:relative;height:26px;background:rgba(255,255,255,.08);border-radius:8px;margin-bottom:4px">
-    {% for s in usage_segments %}
-    <div title="{{ s.start }}–{{ s.end }} · {{ s.minutes }} min" style="position:absolute;top:3px;bottom:3px;left:{{ s.left }}%;width:{{ s.width }}%;background:#f9a825;border-radius:5px"></div>
-    {% endfor %}
-  </div>
-  <div class="muted" style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:8px"><span>0</span><span>6</span><span>12</span><span>18</span><span>24 Uhr</span></div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-    {% for s in usage_segments %}<span style="background:rgba(255,255,255,.08);border-radius:10px;padding:3px 9px;font-size:13px">{{ s.start }}–{{ s.end }} · {{ s.minutes }} min</span>{% endfor %}
-  </div>
-  {% endif %}
-  {% if "screen_active" in dev.keys() and dev["screen_active"] == 0 %}
-  <p class="muted" style="margin:0 0 10px">💤 Bildschirm gerade aus / zugeklappt / gesperrt – es wird keine Zeit gezählt.</p>
-  {% endif %}
-  <h3 style="margin:6px 0 8px">Letzte 7 Tage</h3>
-  <div style="display:flex;gap:10px;align-items:flex-end;height:120px">
-    {% for u in usage_week %}
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end">
-      <div class="muted" style="font-size:11px">{{ u.minutes }}m</div>
-      <div title="{{ u.minutes }} min" style="width:70%;border-radius:6px 6px 0 0;background:#3457b4;height:{{ [4, (u.minutes * 90 // usage_max)] | max }}px"></div>
-      <div class="muted" style="font-size:10px;text-align:center">{{ u.day }}</div>
-    </div>
-    {% endfor %}
-  </div>
-</div>
 
 <div class="card">
   <h2>Geräte-Protokoll (Diagnose)</h2>

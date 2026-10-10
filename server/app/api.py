@@ -85,10 +85,14 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
         )
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
+        # Abschnitte „von wann bis wann" je Tag mitschreiben (für die Zeitleiste im Admin, auch rückwirkend).
+        segs = json.dumps(hb.usageSegments[:100]) if hb.usageSegments else None
         c.execute(
-            """INSERT INTO usage_daily(device_id, day, minutes) VALUES (?,?,?)
-               ON CONFLICT(device_id, day) DO UPDATE SET minutes=MAX(minutes, excluded.minutes)""",
-            (device_id, day, hb.usageMinutesToday),
+            """INSERT INTO usage_daily(device_id, day, minutes, segments_json, budget) VALUES (?,?,?,?,?)
+               ON CONFLICT(device_id, day) DO UPDATE SET minutes=MAX(minutes, excluded.minutes),
+                   segments_json=COALESCE(excluded.segments_json, segments_json),
+                   budget=excluded.budget""",
+            (device_id, day, hb.usageMinutesToday, segs, hb.dailyBudgetMinutes),
         )
     return {"ok": True}
 

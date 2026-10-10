@@ -28,8 +28,10 @@
     .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .muted { color:var(--muted); font-size:13px; }
     a.btn { text-decoration:none; }
-    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    @media (max-width:720px){ .grid{ grid-template-columns:1fr; } }
+    .grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
+    .grid > *, .card { min-width:0; overflow-wrap:anywhere; }
+    input,select { max-width:100%; }
+    @media (max-width:720px){ .grid{ grid-template-columns:minmax(0,1fr); } main{ padding:0 10px; } .card{ padding:14px 14px; } header{ padding:12px 14px; } }
     code.code { background:#0b1f3a; padding:2px 8px; border-radius:6px; font-size:16px; letter-spacing:2px; }
   </style>
 </head>

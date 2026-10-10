@@ -85,6 +85,8 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN usage_segments TEXT",
     "ALTER TABLE devices ADD COLUMN usage_day TEXT",
     "ALTER TABLE devices ADD COLUMN screen_active INTEGER DEFAULT 1",
+    "ALTER TABLE usage_daily ADD COLUMN segments_json TEXT",
+    "ALTER TABLE usage_daily ADD COLUMN budget INTEGER",
 ]
 
 
