@@ -115,9 +115,11 @@ def _version_older(current: str, target: str) -> bool:
 def get_commands(device_id: str, request: Request):
     _require_self(request, device_id)
     now = int(time.time())
+    # Abgelaufene Befehle nicht endlos neu ausliefern (das Gerät verwirft sie ohnehin).
     rows = db.query(
-        "SELECT id, payload_json FROM commands WHERE device_id=? AND acked=0 ORDER BY created_at ASC",
-        (device_id,),
+        """SELECT id, payload_json FROM commands WHERE device_id=? AND acked=0
+               AND (expires_at IS NULL OR expires_at=0 OR expires_at>?) ORDER BY created_at ASC""",
+        (device_id, now),
     )
     out = []
     for r in rows:
