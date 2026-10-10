@@ -5,6 +5,7 @@ using FrohLock.Core.Config;
 using FrohLock.Core.Crypto;
 using FrohLock.Core.Logging;
 using FrohLock.Core.Models;
+using FrohLock.Core.Schedule;
 using FrohLock.Core.Server;
 using FrohLock.Core.Time;
 using FrohLock.Service.Interop;
@@ -101,10 +102,14 @@ public sealed class EnforcementWorker : BackgroundService
                     WatchdogAgent();
                 }
 
-                // Tages-Nutzung zählen: nur wenn Kind angemeldet UND Gerät gerade nutzbar.
-                if (SessionLauncher.HasActiveUserSession()
-                    && _controller.AgentSilence < TimeSpan.FromSeconds(45)
-                    && !_controller.Decide().IsLocked)
+                // Tages-Nutzung zählen: nur wenn Kind angemeldet, Gerät nutzbar UND der Bildschirm
+                // wirklich an ist (zugeklappt / Bildschirm aus / Windows gesperrt zählt NICHT).
+                // Den Bildschirmzustand meldet der Agent; schweigt er (Standby), zählt ohnehin nichts.
+                if (UsageGate.ShouldCount(
+                        SessionLauncher.HasActiveUserSession(),
+                        _controller.AgentSilence < TimeSpan.FromSeconds(45),
+                        _controller.Decide().IsLocked,
+                        _controller.ScreenActive))
                 {
                     _controller.AccrueUsage(TickSeconds);
                 }

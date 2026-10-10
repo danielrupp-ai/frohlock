@@ -49,5 +49,7 @@ class HeartbeatIn(BaseModel):
     usageMinutesToday: int = 0
     dailyBudgetMinutes: int = 0
     usageDay: str = ""
+    usageSegments: list[dict] = []
+    screenActive: bool = True
     agentAliveAgeSeconds: int = -1
     recentAudit: str = ""

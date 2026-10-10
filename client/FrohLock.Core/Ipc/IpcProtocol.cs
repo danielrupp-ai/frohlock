@@ -1,3 +1,5 @@
+using FrohLock.Core.Schedule;
+
 namespace FrohLock.Core.Ipc;
 
 /// <summary>
@@ -35,4 +37,12 @@ public sealed class IpcMessage
     public int UsageMinutes { get; set; }               // heute genutzt
     public int BudgetMinutes { get; set; }              // heutiges Tageslimit (0 = keins)
     public bool Configured { get; set; }                // ist FrohLock eingerichtet (PIN gesetzt)?
+    /// <summary>Von wann bis wann heute genutzt wurde (für die Zeitleiste).</summary>
+    public List<UsageSegmentView> UsageSegments { get; set; } = new();
+
+    // Agent -> Dienst (mit AgentAlive): Bildschirmzustand der Sitzung. Nur bei Bildschirm AN,
+    // Deckel offen und entsperrter Windows-Sitzung zählt Bildschirmzeit.
+    public bool DisplayOn { get; set; } = true;
+    public bool LidOpen { get; set; } = true;
+    public bool SessionLocked { get; set; }
 }

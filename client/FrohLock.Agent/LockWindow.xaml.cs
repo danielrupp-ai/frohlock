@@ -19,6 +19,7 @@ public partial class LockWindow : Window
     private int _msgIndex;
     private bool _budgetMode;
     private string _budgetLimitText = "Bildschirmzeit";
+    private readonly UsageTimelineView _usageView = new();
 
     // Liebe, ruhige Nachrichten (rotieren).
     private static readonly string[] NightMessages =
@@ -62,6 +63,7 @@ public partial class LockWindow : Window
     {
         InitializeComponent();
         _ipc = ipc;
+        UsageHost.Content = _usageView;
 
         Left = SystemParameters.VirtualScreenLeft;
         Top = SystemParameters.VirtualScreenTop;
@@ -111,6 +113,14 @@ public partial class LockWindow : Window
         return "Bildschirmzeit";
     }
 
+    /// <summary>Zeitleiste „von wann bis wann" – damit die Kinder sehen, dass die Zeit wirklich um ist.</summary>
+    public void SetUsage(IReadOnlyList<FrohLock.Core.Schedule.UsageSegmentView>? segments, int usageMinutes, int budgetMinutes)
+    {
+        if (!_budgetMode) { UsageHost.Visibility = Visibility.Collapsed; return; }
+        _usageView.Render(segments, usageMinutes, budgetMinutes, limitReached: true);
+        UsageHost.Visibility = Visibility.Visible;
+    }
+
     /// <summary>Zeigt Eltern den „PIN vergessen?"-Weg (kommt vom Dienst über IPC).</summary>
     public void SetForgot(string? forgotUrl)
     {
@@ -131,6 +141,11 @@ public partial class LockWindow : Window
 
     private void UpdateHeading()
     {
+        // Im Tageslimit-Modus braucht die Zeitleiste Platz -> kleineres Symbol, keine Tiere.
+        BigEmoji.FontSize = _budgetMode ? 72 : 120;
+        CrittersText.Visibility = _budgetMode ? Visibility.Collapsed : Visibility.Visible;
+        if (!_budgetMode) UsageHost.Visibility = Visibility.Collapsed;
+
         if (_budgetMode)
         {
             HeadingText.Text = "Zeit ist um für heute!";

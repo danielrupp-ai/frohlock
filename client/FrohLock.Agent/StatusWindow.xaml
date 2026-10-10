@@ -1,7 +1,7 @@
 <Window x:Class="FrohLock.Agent.StatusWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="FrohLock – Übersicht" Height="460" Width="480"
+        Title="FrohLock – Übersicht" Height="680" Width="620"
         Background="#0F1720" WindowStartupLocation="CenterScreen" ResizeMode="CanMinimize">
   <Window.Resources>
     <Style TargetType="TextBlock"><Setter Property="Foreground" Value="#EEF2F7"/></Style>
@@ -36,6 +36,8 @@
           </Border>
         </StackPanel>
       </Border>
+
+      <ContentControl x:Name="UsageHost" Margin="0,14,0,0"/>
 
       <TextBlock x:Name="FootText" Text="" Foreground="#66FFFFFF" FontSize="11"
                  HorizontalAlignment="Center" Margin="0,16,0,0"/>

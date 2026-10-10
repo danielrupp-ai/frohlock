@@ -8,11 +8,13 @@ public partial class StatusWindow : Window
 {
     private readonly IpcClient _ipc;
     private readonly DispatcherTimer _timer;
+    private readonly UsageTimelineView _usageView = new();
 
     public StatusWindow(IpcClient ipc)
     {
         InitializeComponent();
         _ipc = ipc;
+        UsageHost.Content = _usageView;
         Loaded += async (_, _) => await Refresh();
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _timer.Tick += async (_, _) => await Refresh();
@@ -69,6 +71,9 @@ public partial class StatusWindow : Window
             BudgetText.Text = $"Kein Tageslimit gesetzt. Heute genutzt: {s.UsageMinutes} min.";
             BarBack.Visibility = Visibility.Collapsed;
         }
+
+        _usageView.Render(s.UsageSegments, s.UsageMinutes, s.BudgetMinutes,
+            limitReached: s.BudgetMinutes > 0 && s.UsageMinutes >= s.BudgetMinutes);
 
         FootText.Text = "Stand: " + DateTime.Now.ToString("HH:mm:ss") + " · nur Ansicht (Änderungen über die Eltern-Verwaltung)";
     }

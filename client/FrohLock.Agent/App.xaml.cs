@@ -17,6 +17,7 @@ public partial class App : Application
     private LockWindow? _lock;
     private DispatcherTimer? _poll;
     private DispatcherTimer? _alive;
+    private readonly ScreenStateMonitor _screen = new();
 
     private const int ReminderThresholdMinutes = 15;
     private DateTime _lastReminderUtc = DateTime.MinValue;
@@ -47,11 +48,21 @@ public partial class App : Application
         _poll.Tick += async (_, _) => await PollAsync();
         _poll.Start();
 
+        // Bildschirm an/aus, Deckel, Windows-Sperre -> Dienst zählt nur bei sichtbarem Bildschirm.
+        _screen.Start();
+        _screen.Changed += async () => await SendAliveAsync();
+
         _alive = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-        _alive.Tick += async (_, _) => { try { await _ipc.AliveAsync(); } catch { } };
+        _alive.Tick += async (_, _) => await SendAliveAsync();
         _alive.Start();
+        _ = SendAliveAsync();
 
         _ = PollAsync();
+    }
+
+    private async Task SendAliveAsync()
+    {
+        try { await _ipc.AliveAsync(_screen.DisplayOn, _screen.LidOpen, _screen.SessionLocked); } catch { }
     }
 
     private bool _polling;
@@ -68,6 +79,7 @@ public partial class App : Application
             {
                 _lock?.SetForgot(status?.ForgotUrl);
                 ShowLock(status?.Reason ?? "");
+                if (status is not null) _lock?.SetUsage(status.UsageSegments, status.UsageMinutes, status.BudgetMinutes);
             }
             else
             {
@@ -116,6 +128,7 @@ public partial class App : Application
     private void OnExit(object sender, ExitEventArgs e)
     {
         _hook?.Dispose();
+        _screen.Dispose();
         try { _singleInstance?.ReleaseMutex(); } catch { }
     }
 }

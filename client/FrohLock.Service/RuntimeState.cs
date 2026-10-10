@@ -1,4 +1,5 @@
 using FrohLock.Core;
+using FrohLock.Core.Schedule;
 
 namespace FrohLock.Service;
 
@@ -18,6 +19,7 @@ public sealed class RuntimeState
     // Tages-Gesamtnutzung (für optionales Tageslimit).
     public string UsageDay { get; set; } = "";       // yyyy-MM-dd (Vertrauenszeit, lokal)
     public long UsageSecondsToday { get; set; }
+    public List<UsageSegment> UsageSegmentsToday { get; set; } = new(); // von wann bis wann
 
     public static RuntimeState Load()
     {
@@ -51,12 +53,16 @@ public sealed class RuntimeState
     }
 
     /// <summary>Zählt genutzte Sekunden für den aktuellen (Vertrauens-)Tag; setzt bei Tageswechsel zurück.</summary>
-    public void AddUsage(DateTime trustedLocalNow, int seconds)
+    public void AddUsage(DateTime trustedLocalNow, long trustedNowUnix, int seconds)
     {
         var day = trustedLocalNow.ToString("yyyy-MM-dd");
-        if (UsageDay != day) { UsageDay = day; UsageSecondsToday = 0; }
+        if (UsageDay != day) { UsageDay = day; UsageSecondsToday = 0; UsageSegmentsToday.Clear(); }
         UsageSecondsToday += seconds;
+        UsageTimeline.Accrue(UsageSegmentsToday, trustedNowUnix, seconds);
     }
+
+    public List<UsageSegment> SegmentsToday(DateTime trustedLocalNow)
+        => UsageDay == trustedLocalNow.ToString("yyyy-MM-dd") ? UsageSegmentsToday : new List<UsageSegment>();
 
     public int UsageMinutesToday(DateTime trustedLocalNow)
     {

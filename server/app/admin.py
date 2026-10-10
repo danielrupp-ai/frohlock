@@ -117,12 +117,27 @@ def device_detail(request: Request, device_id: str):
     wb = (wb + [0] * 7)[:7]
     weekday_budgets = [{"idx": d, "label": lbl, "value": wb[d]} for d, lbl in DAYS]
 
+    # Von wann bis wann heute genutzt (meldet der Client seit v0.19.0).
+    usage_segments = []
+    if "usage_segments" in dev.keys() and dev["usage_segments"]:
+        try:
+            for seg in json.loads(dev["usage_segments"]):
+                start, end = int(seg.get("startMinute", 0)), int(seg.get("endMinute", 0))
+                usage_segments.append({
+                    "start": seg.get("start", ""), "end": seg.get("end", ""),
+                    "minutes": int(seg.get("minutes", 0)),
+                    "left": start * 100 / 1440, "width": max(0.4, (end - start) * 100 / 1440),
+                })
+        except (ValueError, TypeError):
+            usage_segments = []
+
     return templates.TemplateResponse("device.html", {
         "request": request, "dev": dev, "version": version, "draft": draft,
         "windows": windows, "days": DAYS, "audit": audit_rows, "now": int(time.time()),
         "has_pin": bool(draft.get("pinHash")),
         "usage_week": usage_week, "usage_max": max_min, "budget": budget,
         "weekday_budgets": weekday_budgets,
+        "usage_segments": usage_segments,
         "usage_today": dev["usage_today"] if "usage_today" in dev.keys() else 0,
     })
 

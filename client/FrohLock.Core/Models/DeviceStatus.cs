@@ -1,3 +1,5 @@
+using FrohLock.Core.Schedule;
+
 namespace FrohLock.Core.Models;
 
 /// <summary>Status, den der Client im Heartbeat an den Server meldet.</summary>
@@ -17,6 +19,9 @@ public sealed class DeviceStatus
     public int UsageMinutesToday { get; set; }
     public int DailyBudgetMinutes { get; set; }
     public string UsageDay { get; set; } = "";
+    public List<UsageSegmentView> UsageSegments { get; set; } = new();
+    /// <summary>Zählt gerade Bildschirmzeit? (Bildschirm an, Deckel offen, Windows entsperrt.)</summary>
+    public bool ScreenActive { get; set; }
 
     /// <summary>Sekunden seit letztem Overlay-Agent-Lebenszeichen; -1 = nie/kein Agent (Diagnose).</summary>
     public int AgentAliveAgeSeconds { get; set; } = -1;

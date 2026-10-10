@@ -35,6 +35,9 @@ public sealed class IpcClient
     public Task<IpcMessage?> SubmitPinAsync(string pin, CancellationToken ct = default)
         => SendAsync(new IpcMessage { Kind = IpcKind.SubmitPin, Pin = pin }, ct: ct);
 
-    public Task<IpcMessage?> AliveAsync(CancellationToken ct = default)
-        => SendAsync(new IpcMessage { Kind = IpcKind.AgentAlive }, ct: ct);
+    public Task<IpcMessage?> AliveAsync(bool displayOn, bool lidOpen, bool sessionLocked, CancellationToken ct = default)
+        => SendAsync(new IpcMessage
+        {
+            Kind = IpcKind.AgentAlive, DisplayOn = displayOn, LidOpen = lidOpen, SessionLocked = sessionLocked
+        }, ct: ct);
 }

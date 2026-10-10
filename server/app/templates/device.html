@@ -130,6 +130,21 @@
     <div style="height:100%;width:{{ [100, (usage_today * 100 // budget)] | min }}%;background:{% if usage_today >= budget %}#c62828{% elif usage_today * 100 // budget > 80 %}#f9a825{% else %}#43a047{% endif %}"></div>
   </div>
   {% endif %}
+  {% if usage_segments %}
+  <h3 style="margin:6px 0 8px">Heute von – bis</h3>
+  <div style="position:relative;height:26px;background:rgba(255,255,255,.08);border-radius:8px;margin-bottom:4px">
+    {% for s in usage_segments %}
+    <div title="{{ s.start }}–{{ s.end }} · {{ s.minutes }} min" style="position:absolute;top:3px;bottom:3px;left:{{ s.left }}%;width:{{ s.width }}%;background:#f9a825;border-radius:5px"></div>
+    {% endfor %}
+  </div>
+  <div class="muted" style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:8px"><span>0</span><span>6</span><span>12</span><span>18</span><span>24 Uhr</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+    {% for s in usage_segments %}<span style="background:rgba(255,255,255,.08);border-radius:10px;padding:3px 9px;font-size:13px">{{ s.start }}–{{ s.end }} · {{ s.minutes }} min</span>{% endfor %}
+  </div>
+  {% endif %}
+  {% if "screen_active" in dev.keys() and dev["screen_active"] == 0 %}
+  <p class="muted" style="margin:0 0 10px">💤 Bildschirm gerade aus / zugeklappt / gesperrt – es wird keine Zeit gezählt.</p>
+  {% endif %}
   <h3 style="margin:6px 0 8px">Letzte 7 Tage</h3>
   <div style="display:flex;gap:10px;align-items:flex-end;height:120px">
     {% for u in usage_week %}

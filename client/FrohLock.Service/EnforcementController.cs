@@ -22,11 +22,36 @@ public sealed class EnforcementController
     private ScheduleEngine? _engine;
     private DateTime _lastAgentAliveUtc = DateTime.MinValue;
 
+    // Bildschirmzustand, vom Agent gemeldet (Standard: an, bis der Agent etwas anderes sagt).
+    private bool _displayOn = true;
+    private bool _lidOpen = true;
+    private bool _sessionLocked;
+
     public const int MaxPinFailuresBeforeLockout = 8;
 
     /// <summary>Watchdog: Zeitpunkt des letzten Agent-Lebenszeichens.</summary>
     public void MarkAgentAlive() { lock (_gate) _lastAgentAliveUtc = DateTime.UtcNow; }
     public TimeSpan AgentSilence { get { lock (_gate) return DateTime.UtcNow - _lastAgentAliveUtc; } }
+
+    /// <summary>Bildschirmzustand der Sitzung übernehmen (kommt mit jedem Agent-Lebenszeichen).</summary>
+    public void SetScreenState(bool displayOn, bool lidOpen, bool sessionLocked)
+    {
+        lock (_gate)
+        {
+            bool before = UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked);
+            _displayOn = displayOn;
+            _lidOpen = lidOpen;
+            _sessionLocked = sessionLocked;
+            bool after = UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked);
+            if (before != after)
+                _audit.Write("SCREEN", after
+                    ? "Bildschirm an – Bildschirmzeit zählt"
+                    : $"Pause: {(!lidOpen ? "Deckel zu" : !displayOn ? "Bildschirm aus" : "Windows gesperrt")} – zählt nicht");
+        }
+    }
+
+    /// <summary>Bildschirm an, Deckel offen, Windows entsperrt?</summary>
+    public bool ScreenActive { get { lock (_gate) return UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked); } }
 
     public EnforcementController(ITrustedClock clock, AuditLog audit, RuntimeState state)
     {
@@ -84,7 +109,8 @@ public sealed class EnforcementController
         lock (_gate)
         {
             if (_config is null) return;
-            _state.AddUsage(_clock.UtcNow.ToLocalTime(), seconds);
+            var utc = _clock.UtcNow;
+            _state.AddUsage(utc.ToLocalTime(), new DateTimeOffset(utc).ToUnixTimeSeconds(), seconds);
         }
     }
 
@@ -139,6 +165,16 @@ public sealed class EnforcementController
     {
         lock (_gate) return _state.UsageMinutesToday(_clock.UtcNow.ToLocalTime());
     }
+
+    /// <summary>Von wann bis wann heute genutzt wurde (lokale Uhrzeit, Pausen ≤ 5 min zusammengefasst).</summary>
+    public List<UsageSegmentView> TodayUsageSegments()
+    {
+        lock (_gate) return TodayUsageSegmentsNoLock();
+    }
+
+    private List<UsageSegmentView> TodayUsageSegmentsNoLock()
+        => UsageTimeline.ToViews(_state.SegmentsToday(_clock.UtcNow.ToLocalTime()),
+            unix => DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime);
 
     public int TodayBudgetMinutes()
     {
@@ -236,6 +272,8 @@ public sealed class EnforcementController
                 UsageMinutesToday = _state.UsageMinutesToday(localNow),
                 DailyBudgetMinutes = _config?.EffectiveDailyBudget(localNow.DayOfWeek) ?? 0,
                 UsageDay = localNow.ToString("yyyy-MM-dd"),
+                UsageSegments = TodayUsageSegmentsNoLock(),
+                ScreenActive = UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked),
                 AgentAliveAgeSeconds = _lastAgentAliveUtc == DateTime.MinValue
                     ? -1 : (int)(DateTime.UtcNow - _lastAgentAliveUtc).TotalSeconds,
                 RecentAudit = string.Join("\n", _audit.Tail(25))

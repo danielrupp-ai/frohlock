@@ -217,3 +217,27 @@ def test_used_pairing_code_rejected(client):
     assert client.post("/devices/register", json={"pairingCode": code}).status_code == 200
     # zweite Registrierung mit gleichem Code -> abgelehnt
     assert client.post("/devices/register", json={"pairingCode": code}).status_code == 400
+
+
+def test_usage_timeline_in_admin(client):
+    """Client meldet „von wann bis wann" -> Admin-Geräteseite zeigt die Zeitleiste."""
+    _admin_login(client)
+    client.post("/admin/pairing", data={"device_name": "Zeit-Laptop"}, follow_redirects=False)
+    import app.db as dbmod
+    code = dbmod.query("SELECT code FROM pairing_codes WHERE device_name='Zeit-Laptop'")[0]["code"]
+    dev = client.post("/devices/register", json={"pairingCode": code, "deviceName": "Zeit-Laptop"}).json()
+    device_id = dev["deviceId"]
+    auth = {"Authorization": f"Bearer {dev['token']}"}
+
+    hb = {"deviceId": device_id, "appVersion": "0.19.0", "usageMinutesToday": 120,
+          "dailyBudgetMinutes": 120, "usageDay": "2026-10-10", "screenActive": False,
+          "usageSegments": [
+              {"start": "09:10", "end": "10:20", "startMinute": 550, "endMinute": 620, "minutes": 70},
+              {"start": "16:00", "end": "16:50", "startMinute": 960, "endMinute": 1010, "minutes": 50},
+          ]}
+    assert client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth).status_code == 200
+
+    page = client.get(f"/admin/devices/{device_id}").text
+    assert "09:10–10:20 · 70 min" in page
+    assert "16:00–16:50 · 50 min" in page
+    assert "keine Zeit gezählt" in page
