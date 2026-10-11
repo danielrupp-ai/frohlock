@@ -18,6 +18,10 @@ public partial class LockWindow : Window
     private DateTime _lastBubbleUtc = DateTime.MinValue;
     private int _msgIndex;
     private bool _budgetMode;
+    private bool _penaltyMode;
+    private long _penaltyBase;            // zuletzt vom Dienst gemeldete Restsekunden
+    private DateTime _penaltyBaseAtUtc;   // wann gemeldet (für einen flüssigen Sekunden-Countdown)
+    private int _penaltyTotalMinutes;
     private string _budgetLimitText = "Bildschirmzeit";
     private readonly UsageTimelineView _usageView = new();
 
@@ -48,6 +52,22 @@ public partial class LockWindow : Window
         "Gut gespielt! 🙌 Das Tageslimit ist erreicht – morgen geht's weiter.",
     };
 
+    // Auszeit: erklärt dem Kind ruhig, WARUM gesperrt ist.
+    private static readonly string[] PenaltyMessages =
+    {
+        "Wenn Mama oder Papa beschäftigt sind, darfst du nur bei einem Notfall stören. 🚨",
+        "Ein Notfall ist, wenn jemand verletzt ist, etwas kaputt geht oder du Angst hast. 💛",
+        "Nutze die Auszeit, um kurz nachzudenken. Danach geht's weiter. 🌱",
+        "Beim nächsten Mal: erst überlegen – ist es ein Notfall? Wenn nicht, kurz warten. ⏳",
+    };
+
+    private static readonly string[] PenaltyBypassMessages =
+    {
+        "Gut versucht! 😄 Aber die Auszeit läuft noch.",
+        "Die Auszeit geht erst vorbei, wenn die Uhr bei 0:00 ist. ⏳",
+        "Nur Mama oder Papa können die Auszeit beenden. 💛",
+    };
+
     // Freundliche Sprüche, wenn ein Umgehungsversuch erkannt wird.
     private static readonly string[] BypassMessages =
     {
@@ -73,7 +93,7 @@ public partial class LockWindow : Window
         Loaded += (_, _) => { PinBox.Focus(); UpdateClock(); UpdateHeading(); };
 
         _assertTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
-        _assertTimer.Tick += (_, _) => { AssertForeground(); UpdateClock(); };
+        _assertTimer.Tick += (_, _) => { AssertForeground(); UpdateClock(); UpdateCountdown(); };
         _assertTimer.Start();
 
         // Nachrichten alle 6 s wechseln.
@@ -87,10 +107,12 @@ public partial class LockWindow : Window
 
     public void SetReason(string reason)
     {
-        bool newBudget = !string.IsNullOrEmpty(reason) && reason.Contains("Tageslimit");
+        bool newPenalty = FrohLock.Core.Schedule.PenaltyPolicy.IsPenaltyReason(reason);
+        bool newBudget = !newPenalty && !string.IsNullOrEmpty(reason) && reason.Contains("Tageslimit");
         if (newBudget) _budgetLimitText = LimitTextFrom(reason);
-        bool modeChanged = newBudget != _budgetMode;
+        bool modeChanged = newBudget != _budgetMode || newPenalty != _penaltyMode;
         _budgetMode = newBudget;
+        _penaltyMode = newPenalty;
         UpdateHeading();
         if (modeChanged) { _msgIndex = -1; RotateMessage(); } // sofort passende Nachricht + Symbol
     }
@@ -111,6 +133,38 @@ public partial class LockWindow : Window
         }
         catch { }
         return "Bildschirmzeit";
+    }
+
+    /// <summary>Auszeit-Stand vom Dienst: Restsekunden, wie oft gestört, Minuten insgesamt.</summary>
+    public void SetPenalty(long secondsRemaining, int count, int totalMinutes)
+    {
+        if (secondsRemaining != _penaltyBase)
+        {
+            _penaltyBase = secondsRemaining;
+            _penaltyBaseAtUtc = DateTime.UtcNow;
+        }
+        _penaltyTotalMinutes = totalMinutes > 0 ? totalMinutes : (int)Math.Ceiling(secondsRemaining / 60.0);
+        int minutes = _penaltyTotalMinutes;
+        string why = "Du hast gestört, obwohl es kein Notfall war.\nDas ist gegen unsere Regel – deshalb ist der Laptop jetzt "
+                     + $"{minutes} Minuten gesperrt.";
+        if (count > 1)
+            why += minutes == count * 15
+                ? $"\n({count}× gestört: {count} × 15 Minuten zusammengezählt)"
+                : $"\n({count}× gestört – die Zeiten werden zusammengezählt)";
+        PenaltyInfoText.Text = why;
+        UpdateCountdown();
+    }
+
+    private void UpdateCountdown()
+    {
+        if (!_penaltyMode) return;
+        // Dienst zählt in 5-s-Schritten; dazwischen flüssig runterzählen (höchstens 6 s vorauslaufen).
+        double since = (DateTime.UtcNow - _penaltyBaseAtUtc).TotalSeconds;
+        long shown = Math.Max(0, _penaltyBase - (long)Math.Min(since, 6));
+        CountdownText.Text = FrohLock.Core.Schedule.PenaltyPolicy.FormatCountdown(shown);
+        double total = Math.Max(1, _penaltyTotalMinutes * 60.0);
+        double frac = Math.Clamp(shown / total, 0, 1);
+        PenaltyBarFill.Width = Math.Max(0, PenaltyBarBack.ActualWidth * frac);
     }
 
     /// <summary>Zeitleiste „von wann bis wann" – damit die Kinder sehen, dass die Zeit wirklich um ist.</summary>
@@ -141,12 +195,19 @@ public partial class LockWindow : Window
 
     private void UpdateHeading()
     {
-        // Im Tageslimit-Modus braucht die Zeitleiste Platz -> kleineres Symbol, keine Tiere.
-        BigEmoji.FontSize = _budgetMode ? 72 : 120;
-        CrittersText.Visibility = _budgetMode ? Visibility.Collapsed : Visibility.Visible;
+        // Im Tageslimit-/Auszeit-Modus braucht der Inhalt Platz -> kleineres Symbol, keine Tiere.
+        bool compact = _budgetMode || _penaltyMode;
+        BigEmoji.FontSize = compact ? 72 : 120;
+        CrittersText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         if (!_budgetMode) UsageHost.Visibility = Visibility.Collapsed;
+        PenaltyPanel.Visibility = _penaltyMode ? Visibility.Visible : Visibility.Collapsed;
 
-        if (_budgetMode)
+        if (_penaltyMode)
+        {
+            HeadingText.Text = "Auszeit!";
+            BigEmoji.Text = "⏸️";
+        }
+        else if (_budgetMode)
         {
             HeadingText.Text = "Zeit ist um für heute!";
             BigEmoji.Text = "⏰";
@@ -168,7 +229,8 @@ public partial class LockWindow : Window
 
     private void RotateMessage()
     {
-        var pool = _budgetMode ? BudgetMessages : (IsNight() ? NightMessages : DayMessages);
+        var pool = _penaltyMode ? PenaltyMessages
+            : _budgetMode ? BudgetMessages : (IsNight() ? NightMessages : DayMessages);
         _msgIndex = (_msgIndex + 1) % pool.Length;
         FriendlyText.Text = pool[_msgIndex].Replace("{L}", _budgetLimitText);
     }
@@ -181,7 +243,8 @@ public partial class LockWindow : Window
         _lastBubbleUtc = DateTime.UtcNow;
         Dispatcher.Invoke(() =>
         {
-            BubbleText.Text = BypassMessages[_rng.Next(BypassMessages.Length)];
+            var pool = _penaltyMode ? PenaltyBypassMessages : BypassMessages;
+            BubbleText.Text = pool[_rng.Next(pool.Length)];
             BubbleBorder.Visibility = Visibility.Visible;
             (FindResource("BubbleSb") as Storyboard)?.Begin();
             _bubbleHideTimer.Stop();

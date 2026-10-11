@@ -121,7 +121,10 @@ public sealed class IpcServer : BackgroundService
                     UsageMinutes = _controller.TodayUsageMinutes(),
                     BudgetMinutes = _controller.TodayBudgetMinutes(),
                     Configured = _controller.IsConfigured,
-                    UsageSegments = _controller.TodayUsageSegments()
+                    UsageSegments = _controller.TodayUsageSegments(),
+                    PenaltySeconds = _controller.PenaltySecondsRemaining,
+                    PenaltyCount = _controller.PenaltyCount,
+                    PenaltyTotalMinutes = _controller.PenaltyTotalMinutes
                 };
             }
             case IpcKind.SubmitPin:

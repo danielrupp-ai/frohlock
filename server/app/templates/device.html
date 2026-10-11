@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
+{% from "_penalty.html" import penalty_box, flash_box with context %}
+{{ flash_box(flash) }}
 <div class="card">
   <div class="row" style="justify-content:space-between">
     <h1 style="margin:0">{{ dev["name"] }}</h1>
@@ -21,6 +23,14 @@
     {% else %}<span style="color:#ffab40">⚠ vor {{ aa }} s zuletzt aktiv</span>{% endif %}
   </p>
   {% if not has_pin %}<p style="color:#ffab40">⚠ Für dieses Gerät ist noch kein PIN gesetzt – bis dahin ist es fail-secure gesperrt.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Auszeit</h2>
+  {{ penalty_box(dev["id"], penalty, "") }}
+  <p class="muted" style="margin:10px 0 0">Das Kind sieht: „Du hast gestört, obwohl es kein Notfall war …" mit Countdown.
+    Die Zeit läuft nur, solange der Laptop an ist und der Bildschirm sichtbar ist – Zuklappen hält sie an.
+    Mehrere Auszeiten addieren sich. Eltern-PIN oder „Entsperren" beenden sie ebenfalls.</p>
 </div>
 
 <div class="card" id="zeit">

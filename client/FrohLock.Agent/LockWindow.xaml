@@ -61,6 +61,22 @@
 
       <TextBlock x:Name="HeadingText" Text="Gute Nacht!" FontSize="46" FontWeight="Bold"
                  HorizontalAlignment="Center" Margin="0,12,0,4"/>
+      <!-- Auszeit: Erklärung + Countdown (nur im Auszeit-Modus sichtbar) -->
+      <Border x:Name="PenaltyPanel" Background="#33000000" CornerRadius="18" Padding="22,16" Margin="0,4,0,14"
+              Visibility="Collapsed">
+        <StackPanel>
+          <TextBlock x:Name="PenaltyInfoText" FontSize="21" FontWeight="SemiBold" TextWrapping="Wrap"
+                     TextAlignment="Center" HorizontalAlignment="Center"/>
+          <TextBlock x:Name="CountdownText" Text="15:00" FontSize="84" FontWeight="Bold"
+                     FontFamily="Segoe UI" HorizontalAlignment="Center" Margin="0,6,0,0" Foreground="#FFD166"/>
+          <Border x:Name="PenaltyBarBack" Background="#33FFFFFF" CornerRadius="7" Height="14" Margin="10,2,10,10">
+            <Border x:Name="PenaltyBarFill" Background="#FFD166" CornerRadius="7" HorizontalAlignment="Left" Width="0"/>
+          </Border>
+          <TextBlock Text="⏸️ Die Uhr läuft nur, wenn der Laptop an ist und du diesen Bildschirm siehst. Zuklappen oder Weggehen hält sie an."
+                     FontSize="15" Opacity="0.85" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+
       <TextBlock x:Name="FriendlyText"
                  Text="Jetzt ist Schlafenszeit. Der Laptop macht auch ein Nickerchen. 💤"
                  FontSize="20" Opacity="0.92" HorizontalAlignment="Center"

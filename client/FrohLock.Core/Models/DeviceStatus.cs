@@ -22,6 +22,10 @@ public sealed class DeviceStatus
     public List<UsageSegmentView> UsageSegments { get; set; } = new();
     /// <summary>Zählt gerade Bildschirmzeit? (Bildschirm an, Deckel offen, Windows entsperrt.)</summary>
     public bool ScreenActive { get; set; }
+    /// <summary>Offene Auszeit (Sekunden) und wie oft sie verhängt wurde.</summary>
+    public long PenaltySecondsRemaining { get; set; }
+    public int PenaltyCount { get; set; }
+    public int PenaltyTotalMinutes { get; set; }
 
     /// <summary>Sekunden seit letztem Overlay-Agent-Lebenszeichen; -1 = nie/kein Agent (Diagnose).</summary>
     public int AgentAliveAgeSeconds { get; set; } = -1;

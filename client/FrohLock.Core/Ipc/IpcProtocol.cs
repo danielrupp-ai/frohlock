@@ -39,6 +39,10 @@ public sealed class IpcMessage
     public bool Configured { get; set; }                // ist FrohLock eingerichtet (PIN gesetzt)?
     /// <summary>Von wann bis wann heute genutzt wurde (für die Zeitleiste).</summary>
     public List<UsageSegmentView> UsageSegments { get; set; } = new();
+    /// <summary>Offene Auszeit in Sekunden (Countdown) und wie oft gestört wurde.</summary>
+    public long PenaltySeconds { get; set; }
+    public int PenaltyCount { get; set; }
+    public int PenaltyTotalMinutes { get; set; }
 
     // Agent -> Dienst (mit AgentAlive): Bildschirmzustand der Sitzung. Nur bei Bildschirm AN,
     // Deckel offen und entsperrter Windows-Sitzung zählt Bildschirmzeit.

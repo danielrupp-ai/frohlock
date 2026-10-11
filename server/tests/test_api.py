@@ -249,3 +249,52 @@ def test_usage_timeline_in_admin(client):
     hb2 = dict(hb, usageSegments=[])
     assert client.post(f"/devices/{device_id}/heartbeat", json=hb2, headers=auth).status_code == 200
     assert "16:00 – 16:50" in client.get(f"/admin/devices/{device_id}?day=2026-10-10").text
+
+
+def test_timeout_command_stacks_and_waits_for_device(client):
+    """15-Min-Auszeit: signierter Befehl, lange gültig (Laptop evtl. zu), mehrfach = mehrere Befehle, aufhebbar."""
+    import base64
+    import json as _json
+    import time as _time
+    _admin_login(client)
+    client.post("/admin/pairing", data={"device_name": "Auszeit-Laptop"}, follow_redirects=False)
+    import app.db as dbmod
+    code = dbmod.query("SELECT code FROM pairing_codes WHERE device_name='Auszeit-Laptop'")[0]["code"]
+    dev = client.post("/devices/register", json={"pairingCode": code, "deviceName": "Auszeit-Laptop"}).json()
+    device_id = dev["deviceId"]
+    auth = {"Authorization": f"Bearer {dev['token']}"}
+
+    # Ein Tipp in der Geräteliste -> zurück zur Liste mit Bestätigung
+    r = client.post(f"/admin/devices/{device_id}/command", data={"kind": "timeout", "back": "dashboard"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/admin?ok=auszeit"
+    client.post(f"/admin/devices/{device_id}/command", data={"kind": "timeout"}, follow_redirects=False)
+
+    page = client.get("/admin?ok=auszeit").text
+    assert "15 Min Auszeit" in page and "Auszeit geschickt" in page
+    assert "2× wartet auf den Laptop" in page
+
+    # Alter Client (vor 0.20.0) bekommt die Auszeit noch NICHT (würde sie verschlucken)
+    client.post(f"/devices/{device_id}/heartbeat", json={"appVersion": "0.19.0.0"}, headers=auth)
+    assert client.get(f"/devices/{device_id}/commands", headers=auth).json() == [] or all(
+        _json.loads(base64.b64decode(e["payloadBase64"]))["type"] != 7
+        for e in client.get(f"/devices/{device_id}/commands", headers=auth).json())
+    client.post(f"/devices/{device_id}/heartbeat", json={"appVersion": "0.20.0.0"}, headers=auth)
+
+    cmds = client.get(f"/devices/{device_id}/commands", headers=auth).json()
+    bodies = [_json.loads(base64.b64decode(e["payloadBase64"])) for e in cmds]
+    timeouts = [b for b in bodies if b["type"] == 7]
+    assert len(timeouts) == 2
+    assert all(b["unlockMinutes"] == 15 for b in timeouts)
+    assert all(b["expiresAtUnix"] - _time.time() > 6 * 86400 for b in timeouts)  # wartet tagelang
+
+    # Gerät meldet laufende Auszeit -> Admin zeigt Countdown
+    hb = {"deviceId": device_id, "appVersion": "0.20.0", "penaltySecondsRemaining": 1712, "penaltyCount": 2}
+    client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth)
+    assert "noch 28:32" in client.get(f"/admin/devices/{device_id}").text
+
+    # Aufheben nimmt auch noch nicht zugestellte Auszeiten zurück
+    client.post(f"/admin/devices/{device_id}/command", data={"kind": "cleartimeout"}, follow_redirects=False)
+    cmds = client.get(f"/devices/{device_id}/commands", headers=auth).json()
+    types = [_json.loads(base64.b64decode(e["payloadBase64"]))["type"] for e in cmds]
+    assert 7 not in types and 8 in types

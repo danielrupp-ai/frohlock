@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
+{% from "_penalty.html" import penalty_box, flash_box with context %}
+{{ flash_box(flash) }}
 <div class="card">
   <h1>Geräte</h1>
   {% if devices %}
@@ -26,6 +28,7 @@
       </td>
       <td><a class="btn" href="/admin/devices/{{ d['id'] }}"><button class="secondary">Öffnen</button></a></td>
     </tr>
+    <tr><td colspan="6" style="padding-bottom:16px">{{ penalty_box(d["id"], penalties[d["id"]], "dashboard") }}</td></tr>
     {% endfor %}
   </table>
   {% else %}

@@ -29,10 +29,17 @@
     .muted { color:var(--muted); font-size:13px; }
     a.btn { text-decoration:none; }
     .grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
-    .grid > *, .card { min-width:0; overflow-wrap:anywhere; }
+    .grid > *, .card { min-width:0; overflow-wrap:break-word; }
     input,select { max-width:100%; }
     @media (max-width:720px){ .grid{ grid-template-columns:minmax(0,1fr); } main{ padding:0 10px; } .card{ padding:14px 14px; } header{ padding:12px 14px; } }
     code.code { background:#0b1f3a; padding:2px 8px; border-radius:6px; font-size:16px; letter-spacing:2px; }
+    /* Auszeit-Knopf (_penalty.html) */
+  .fl-pen { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .fl-pen-btn { background:#c62828; color:#fff; font-size:17px; padding:12px 18px; border-radius:12px; line-height:1.15; text-align:left; }
+  .fl-pen-btn small { display:block; font-size:11px; font-weight:500; opacity:.85; }
+  .fl-pen-btn:active { transform:scale(.97); }
+  .fl-pen-state { font-size:13px; line-height:1.5; }
+  .fl-flash { background:#1f5c2e; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:14px; }
   </style>
 </head>
 <body>

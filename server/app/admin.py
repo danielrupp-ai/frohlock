@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from . import configbuilder, db
 from .config import settings
 from .security import pin_hash, verify_password
-from .signing import sign_command
+from .signing import CMD, sign_command
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -56,6 +56,25 @@ def _effective_budget(draft: dict, weekday_py: int) -> int:
     wb = ((draft.get("dailyBudgetByWeekday") or []) + [0] * 7)[:7]
     v = wb[(weekday_py + 1) % 7]
     return v if v > 0 else int(draft.get("dailyBudgetMinutes") or 0)
+
+
+TIMEOUT_MINUTES = 15
+TIMEOUT_TYPE = 7  # CMD["timeout"]
+
+
+def _penalty_status(dev) -> dict:
+    """Auszeit-Stand eines Geräts: läuft gerade (vom Gerät gemeldet) + noch nicht zugestellte Auszeiten."""
+    now = int(time.time())
+    pending = db.query_one(
+        """SELECT COUNT(*) AS n FROM commands WHERE device_id=? AND type=? AND acked=0
+               AND (expires_at IS NULL OR expires_at=0 OR expires_at>?)""",
+        (dev["id"], TIMEOUT_TYPE, now))["n"]
+    keys = dev.keys()
+    secs = int(dev["penalty_seconds"] or 0) if "penalty_seconds" in keys else 0
+    count = int(dev["penalty_count"] or 0) if "penalty_count" in keys else 0
+    return {"seconds": secs, "count": count, "pending": pending,
+            "countdown": f"{secs // 60}:{secs % 60:02d}",
+            "active": secs > 0 or pending > 0}
 
 
 def _timeline(segments: list, minutes: int, budget: int, now_minute: int | None) -> dict:
@@ -142,11 +161,14 @@ def dashboard(request: Request):
     if not _is_admin(request):
         return RedirectResponse("/login", status_code=303)
     devices = db.query("SELECT * FROM devices ORDER BY created_at DESC")
+    penalties = {d["id"]: _penalty_status(d) for d in devices}
     codes = db.query("SELECT * FROM pairing_codes WHERE used_device_id IS NULL AND expires_at > ? ORDER BY created_at DESC",
                      (int(time.time()),))
     now = int(time.time())
     return templates.TemplateResponse("dashboard.html", {
         "request": request, "devices": devices, "codes": codes, "now": now,
+        "penalties": penalties, "timeout_minutes": TIMEOUT_MINUTES,
+        "flash": request.query_params.get("ok", ""),
     })
 
 
@@ -234,6 +256,8 @@ def device_detail(request: Request, device_id: str):
         "usage_week": usage_week, "usage_max": max_min, "budget": budget,
         "weekday_budgets": weekday_budgets,
         "timeline": timeline,
+        "penalty": _penalty_status(dev), "timeout_minutes": TIMEOUT_MINUTES,
+        "flash": request.query_params.get("ok", ""),
         "usage_today": dev["usage_today"] if "usage_today" in dev.keys() else 0,
     })
 
@@ -320,25 +344,37 @@ async def set_settings(request: Request, device_id: str):
 
 @router.post("/admin/devices/{device_id}/command")
 def enqueue_command(request: Request, device_id: str,
-                    kind: str = Form(...), minutes: int = Form(60)):
+                    kind: str = Form(...), minutes: int = Form(60), back: str = Form("")):
     if not _is_admin(request):
         return RedirectResponse("/login", status_code=303)
     kind_map = {"unlock": "unlock", "lock": "lock", "update": "update",
                 "uninstall": "uninstall", "ping": "ping", "resetpin": "resetPin",
-                "updateconfig": "updateConfig"}
+                "updateconfig": "updateConfig", "timeout": "timeout", "cleartimeout": "clearTimeout"}
     ctype = kind_map.get(kind)
+    flash = ""
     if ctype:
+        if ctype == "timeout":
+            minutes = TIMEOUT_MINUTES
+        # Auszeit muss auch zugestellt werden, wenn der Laptop erst Tage später wieder an ist.
+        expires_in = 7 * 86400 if ctype in ("timeout", "clearTimeout") else 3600
         signed = sign_command(device_id, ctype,
-                              unlock_minutes=minutes if ctype == "unlock" else None)
+                              unlock_minutes=minutes if ctype in ("unlock", "timeout") else None,
+                              expires_in=expires_in)
         now = int(time.time())
         with db.tx() as c:
+            if ctype == "clearTimeout":
+                # Noch nicht zugestellte Auszeiten gleich mit zurücknehmen.
+                c.execute("UPDATE commands SET acked=1 WHERE device_id=? AND type=? AND acked=0",
+                          (device_id, TIMEOUT_TYPE))
             c.execute(
                 """INSERT INTO commands(id, device_id, type, payload_json, issued_at, expires_at, created_at)
                    VALUES (?,?,?,?,?,?,?)""",
-                (signed["commandId"], device_id, 0, json.dumps(signed), now, now + 3600, now),
+                (signed["commandId"], device_id, CMD[ctype], json.dumps(signed), now, now + expires_in, now),
             )
-        db.audit(request.session["admin_user"], f"cmd:{ctype}", device_id, "")
-    return RedirectResponse(f"/admin/devices/{device_id}", status_code=303)
+        db.audit(request.session["admin_user"], f"cmd:{ctype}", device_id, f"{minutes} min" if ctype == "timeout" else "")
+        flash = {"timeout": "auszeit", "clearTimeout": "aufgehoben"}.get(ctype, "")
+    target = "/admin" if back == "dashboard" else f"/admin/devices/{device_id}"
+    return RedirectResponse(target + (f"?ok={flash}" if flash else ""), status_code=303)
 
 
 @router.post("/admin/devices/{device_id}/delete")

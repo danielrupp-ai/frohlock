@@ -51,5 +51,7 @@ class HeartbeatIn(BaseModel):
     usageDay: str = ""
     usageSegments: list[dict] = []
     screenActive: bool = True
+    penaltySecondsRemaining: int = 0
+    penaltyCount: int = 0
     agentAliveAgeSeconds: int = -1
     recentAudit: str = ""

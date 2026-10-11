@@ -1,0 +1,22 @@
+{% macro penalty_box(dev_id, p, back) %}
+<div class="fl-pen">
+  <form method="post" action="/admin/devices/{{ dev_id }}/command" style="margin:0">
+    <input type="hidden" name="kind" value="timeout"><input type="hidden" name="back" value="{{ back }}">
+    <button class="fl-pen-btn" type="submit">🛑 {{ timeout_minutes }} Min Auszeit<small>gestört ohne Notfall</small></button>
+  </form>
+  <div class="fl-pen-state">
+    {% if p.seconds > 0 %}<b>⏸ Auszeit läuft: noch {{ p.countdown }}</b>{% if p.count > 1 %} ({{ p.count }}× gestört){% endif %}<br>{% endif %}
+    {% if p.pending > 0 %}⏳ {{ p.pending }}× wartet auf den Laptop{% if p.seconds == 0 %} – greift beim nächsten Aufklappen{% else %} (wird dazugezählt){% endif %}<br>{% endif %}
+    {% if p.active %}
+    <form method="post" action="/admin/devices/{{ dev_id }}/command" style="margin:4px 0 0">
+      <input type="hidden" name="kind" value="cleartimeout"><input type="hidden" name="back" value="{{ back }}">
+      <button class="secondary" type="submit" style="padding:5px 10px;font-size:12px">Auszeit aufheben</button>
+    </form>
+    {% else %}<span class="muted">Keine Auszeit offen.</span>{% endif %}
+  </div>
+</div>
+{% endmacro %}
+{% macro flash_box(flash) %}
+{% if flash == "auszeit" %}<div class="fl-flash">🛑 Auszeit geschickt – sie greift sofort bzw. beim nächsten Aufklappen. Mehrere Auszeiten werden zusammengezählt.</div>
+{% elif flash == "aufgehoben" %}<div class="fl-flash">✅ Auszeit aufgehoben.</div>{% endif %}
+{% endmacro %}

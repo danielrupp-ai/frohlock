@@ -77,11 +77,13 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
             """UPDATE devices SET last_seen=?, app_version=?, reported_config_version=?,
                    locked=?, lock_reason=?, trusted_time_age=?, pin_failures=?,
                    usage_today=?, budget_minutes=?, agent_age=?, recent_audit=?,
-                   usage_segments=?, usage_day=?, screen_active=? WHERE id=?""",
+                   usage_segments=?, usage_day=?, screen_active=?, penalty_seconds=?, penalty_count=?
+               WHERE id=?""",
             (int(time.time()), hb.appVersion, hb.configVersion, 1 if hb.currentlyLocked else 0,
              hb.lockReason, hb.trustedTimeAgeSeconds, hb.pinFailuresToday,
              hb.usageMinutesToday, hb.dailyBudgetMinutes, hb.agentAliveAgeSeconds, hb.recentAudit,
-             json.dumps(hb.usageSegments[:100]), hb.usageDay, 1 if hb.screenActive else 0, device_id),
+             json.dumps(hb.usageSegments[:100]), hb.usageDay, 1 if hb.screenActive else 0,
+             hb.penaltySecondsRemaining, hb.penaltyCount, device_id),
         )
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
@@ -121,13 +123,19 @@ def get_commands(device_id: str, request: Request):
     now = int(time.time())
     # Abgelaufene Befehle nicht endlos neu ausliefern (das Gerät verwirft sie ohnehin).
     rows = db.query(
-        """SELECT id, payload_json FROM commands WHERE device_id=? AND acked=0
+        """SELECT id, type, payload_json FROM commands WHERE device_id=? AND acked=0
                AND (expires_at IS NULL OR expires_at=0 OR expires_at>?) ORDER BY created_at ASC""",
         (device_id, now),
     )
+    # Auszeit-Befehle erst ab v0.20.0 ausliefern – ältere Clients kennen sie nicht und würden sie
+    # quittieren, ohne zu sperren. Bis zum Update bleiben sie in der Warteschlange.
+    dev_row = db.query_one("SELECT app_version FROM devices WHERE id=?", (device_id,))
+    knows_timeout = not _version_older((dev_row["app_version"] if dev_row else "") or "0", "0.20.0")
     out = []
     for r in rows:
         payload = json.loads(r["payload_json"])
+        if r["type"] in (7, 8) and not knows_timeout:
+            continue
         out.append(payload["envelope"])
 
     # Selbst-nachlieferndes Update: solange das Gerät eine ÄLTERE Version meldet, bei JEDEM

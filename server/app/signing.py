@@ -52,7 +52,7 @@ def make_envelope(payload: dict) -> dict:
 # ---- Enum-Werte (müssen zu FrohLock.Core.Models passen) ----
 CMD = {
     "unlock": 0, "lock": 1, "updateConfig": 2, "resetPin": 3,
-    "uninstall": 4, "update": 5, "ping": 6,
+    "uninstall": 4, "update": 5, "ping": 6, "timeout": 7, "clearTimeout": 8,
 }
 
 

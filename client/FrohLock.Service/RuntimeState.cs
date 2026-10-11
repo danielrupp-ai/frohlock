@@ -21,6 +21,22 @@ public sealed class RuntimeState
     public long UsageSecondsToday { get; set; }
     public List<UsageSegment> UsageSegmentsToday { get; set; } = new(); // von wann bis wann
 
+    // Auszeit („gestört ohne Notfall"): Restsekunden, läuft nur bei sichtbarem Bildschirm ab.
+    public long PenaltySecondsRemaining { get; set; }
+    public int PenaltyCount { get; set; }               // wie oft (für den Text „2× gestört")
+    public int PenaltyTotalMinutes { get; set; }        // verhängte Minuten insgesamt (15, 30, …)
+    public List<string> ExecutedCommandIds { get; set; } = new(); // Schutz gegen doppelt zugestellte Befehle
+
+    /// <summary>True, wenn der Befehl neu ist (und merkt ihn sich). Verhindert doppelte Auszeiten.</summary>
+    public bool MarkCommandExecuted(string commandId)
+    {
+        if (string.IsNullOrEmpty(commandId)) return true;
+        if (ExecutedCommandIds.Contains(commandId)) return false;
+        ExecutedCommandIds.Add(commandId);
+        if (ExecutedCommandIds.Count > 100) ExecutedCommandIds.RemoveRange(0, ExecutedCommandIds.Count - 100);
+        return true;
+    }
+
     public static RuntimeState Load()
     {
         try

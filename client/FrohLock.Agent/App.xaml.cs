@@ -79,7 +79,11 @@ public partial class App : Application
             {
                 _lock?.SetForgot(status?.ForgotUrl);
                 ShowLock(status?.Reason ?? "");
-                if (status is not null) _lock?.SetUsage(status.UsageSegments, status.UsageMinutes, status.BudgetMinutes);
+                if (status is not null)
+                {
+                    _lock?.SetUsage(status.UsageSegments, status.UsageMinutes, status.BudgetMinutes);
+                    _lock?.SetPenalty(status.PenaltySeconds, status.PenaltyCount, status.PenaltyTotalMinutes);
+                }
             }
             else
             {

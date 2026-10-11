@@ -8,7 +8,9 @@ public enum CommandType
     ResetPin,      // neuen PIN-Hash setzen (in Payload)
     Uninstall,     // Admin-Wipe: saubere Deinstallation ohne PIN
     Update,        // Selbst-Update anstoßen
-    Ping
+    Ping,
+    Timeout,       // Auszeit (UnlockMinutes = Minuten), addiert sich zu offener Auszeit
+    ClearTimeout   // offene Auszeit aufheben
 }
 
 /// <summary>Ein vom Server signierter Fernbefehl. Ohne gültige Signatur wird er verworfen.</summary>
@@ -24,7 +26,7 @@ public sealed class DeviceCommand
     /// <summary>Gültig bis (Unix-Sekunden). 0 = kein Ablauf.</summary>
     public long ExpiresAtUnix { get; set; }
 
-    /// <summary>Bei Unlock: Dauer der Entsperrung in Minuten.</summary>
+    /// <summary>Bei Unlock: Dauer der Entsperrung in Minuten. Bei Timeout: Dauer der Auszeit.</summary>
     public int? UnlockMinutes { get; set; }
 
     /// <summary>Freies Nutzlast-Feld (z. B. neuer PinHash/Salt, Update-URL).</summary>

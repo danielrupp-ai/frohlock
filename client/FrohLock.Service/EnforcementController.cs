@@ -71,8 +71,23 @@ public sealed class EnforcementController
 
     public LockConfig? Config { get { lock (_gate) return _config; } }
 
-    /// <summary>Aktuelle Sperr-Entscheidung anhand Vertrauenszeit.</summary>
+    /// <summary>Aktuelle Sperr-Entscheidung anhand Vertrauenszeit (inkl. offener Auszeit).</summary>
     public LockDecision Decide()
+    {
+        lock (_gate)
+        {
+            var d = DecideBase();
+            if (_config is null || string.IsNullOrEmpty(_config.PinHash) || IsMasterUnlockActive()) return d;
+            return PenaltyPolicy.Apply(d, _state.PenaltySecondsRemaining);
+        }
+    }
+
+    private bool IsMasterUnlockActive()
+        => _state.MasterUnlockUntilUnix > 0
+           && _clock.UtcNow < DateTimeOffset.FromUnixTimeSeconds(_state.MasterUnlockUntilUnix).UtcDateTime;
+
+    /// <summary>Entscheidung OHNE Auszeit (Sperrzeiten, Tageslimit, Entsperrungen).</summary>
+    private LockDecision DecideBase()
     {
         lock (_gate)
         {
@@ -103,6 +118,69 @@ public sealed class EnforcementController
         }
     }
 
+    // ---------- Auszeit („gestört ohne Notfall") ----------
+
+    /// <summary>Befehl schon ausgeführt? (Doppelt zugestellte Auszeiten dürfen sich nicht addieren.)</summary>
+    public bool MarkCommandExecuted(string commandId)
+    {
+        lock (_gate)
+        {
+            bool fresh = _state.MarkCommandExecuted(commandId);
+            if (fresh) _state.Save();
+            return fresh;
+        }
+    }
+
+    /// <summary>Auszeit hinzufügen – addiert sich zu einer noch offenen Auszeit.</summary>
+    public void AddPenalty(int minutes, string reason)
+    {
+        lock (_gate)
+        {
+            if (minutes <= 0) return;
+            _state.PenaltySecondsRemaining += minutes * 60L;
+            _state.PenaltyCount++;
+            _state.PenaltyTotalMinutes += minutes;
+            _state.Save();
+            _audit.Write("AUSZEIT", $"+{minutes} min ({reason}) – offen jetzt {PenaltyPolicy.FormatCountdown(_state.PenaltySecondsRemaining)}");
+        }
+    }
+
+    public void ClearPenalty(string reason)
+    {
+        lock (_gate)
+        {
+            if (_state.PenaltySecondsRemaining <= 0 && _state.PenaltyCount == 0) return;
+            _state.PenaltySecondsRemaining = 0;
+            _state.PenaltyCount = 0;
+            _state.PenaltyTotalMinutes = 0;
+            _state.Save();
+            _audit.Write("AUSZEIT", $"Aufgehoben ({reason})");
+        }
+    }
+
+    /// <summary>Countdown weiterzählen – nur aufrufen, wenn die Auszeit sichtbar auf dem Bildschirm steht.</summary>
+    public void TickPenalty(int seconds, bool userSessionActive, bool agentAlive, bool screenOn)
+    {
+        lock (_gate)
+        {
+            if (_state.PenaltySecondsRemaining <= 0) return;
+            if (_config is null || string.IsNullOrEmpty(_config.PinHash)) return;
+            if (!PenaltyPolicy.ShouldTick(!DecideBase().IsLocked, userSessionActive, agentAlive, screenOn)) return;
+            _state.PenaltySecondsRemaining = Math.Max(0, _state.PenaltySecondsRemaining - seconds);
+            if (_state.PenaltySecondsRemaining == 0)
+            {
+                _state.PenaltyCount = 0;
+                _state.PenaltyTotalMinutes = 0;
+                _state.Save();
+                _audit.Write("AUSZEIT", "Abgelaufen – Laptop wieder frei");
+            }
+        }
+    }
+
+    public long PenaltySecondsRemaining { get { lock (_gate) return _state.PenaltySecondsRemaining; } }
+    public int PenaltyCount { get { lock (_gate) return _state.PenaltyCount; } }
+    public int PenaltyTotalMinutes { get { lock (_gate) return _state.PenaltyTotalMinutes; } }
+
     /// <summary>Zählt genutzte Zeit (nur aufrufen, wenn Gerät nutzbar + Kind angemeldet).</summary>
     public void AccrueUsage(int seconds)
     {
@@ -126,6 +204,9 @@ public sealed class EnforcementController
                 _state.MasterUnlockUntilUnix = new DateTimeOffset(masterUntil).ToUnixTimeSeconds();
                 _state.UnlockUntilUnix = _state.MasterUnlockUntilUnix;
                 _state.PinFailuresToday = 0;
+                _state.PenaltySecondsRemaining = 0;
+                _state.PenaltyCount = 0;
+                _state.PenaltyTotalMinutes = 0;
                 _state.Save();
                 _audit.Write("PIN", "MASTER-PIN akzeptiert – 8 h entsperrt");
                 return (true, MaxPinFailuresBeforeLockout);
@@ -144,6 +225,10 @@ public sealed class EnforcementController
             {
                 var until = _clock.UtcNow.AddMinutes(Math.Max(1, _config.UnlockGraceMinutes));
                 _state.UnlockUntilUnix = new DateTimeOffset(until).ToUnixTimeSeconds();
+                if (_state.PenaltySecondsRemaining > 0) _audit.Write("AUSZEIT", "Durch Eltern-PIN aufgehoben");
+                _state.PenaltySecondsRemaining = 0;
+                _state.PenaltyCount = 0;
+                _state.PenaltyTotalMinutes = 0;
                 _state.Save();
                 _audit.Write("PIN", $"Korrekt – entsperrt bis {until:o}");
                 return (true, MaxPinFailuresBeforeLockout - _state.PinFailuresToday);
@@ -246,6 +331,9 @@ public sealed class EnforcementController
         {
             var until = _clock.UtcNow.AddMinutes(Math.Max(1, minutes));
             _state.UnlockUntilUnix = new DateTimeOffset(until).ToUnixTimeSeconds();
+            _state.PenaltySecondsRemaining = 0;   // Eltern entsperren -> Auszeit ist mit erledigt
+            _state.PenaltyCount = 0;
+            _state.PenaltyTotalMinutes = 0;
             _state.Save();
             _audit.Write("UNLOCK", $"Fern-Entsperrung {minutes} min: {reason}");
         }
@@ -274,6 +362,9 @@ public sealed class EnforcementController
                 UsageDay = localNow.ToString("yyyy-MM-dd"),
                 UsageSegments = TodayUsageSegmentsNoLock(),
                 ScreenActive = UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked),
+                PenaltySecondsRemaining = _state.PenaltySecondsRemaining,
+                PenaltyCount = _state.PenaltyCount,
+                PenaltyTotalMinutes = _state.PenaltyTotalMinutes,
                 AgentAliveAgeSeconds = _lastAgentAliveUtc == DateTime.MinValue
                     ? -1 : (int)(DateTime.UtcNow - _lastAgentAliveUtc).TotalSeconds,
                 RecentAudit = string.Join("\n", _audit.Tail(25))

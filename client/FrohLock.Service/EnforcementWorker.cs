@@ -40,6 +40,7 @@ public sealed class EnforcementWorker : BackgroundService
     private DateTime _lastAgentCheckUtc = DateTime.MinValue;
     private DateTime _lastUsageSaveUtc = DateTime.MinValue;
     private DateTime _lastLoopSystemUtc = DateTime.MinValue;
+    private DateTime _lastPenaltyTickUtc = DateTime.MinValue;
 
     public EnforcementWorker(EnforcementController controller, SignedConfigStore configStore,
         TrustedTimeProvider time, RsaSignatureVerifier verifier, AuditLog audit, RuntimeState state,
@@ -101,6 +102,16 @@ public sealed class EnforcementWorker : BackgroundService
                     _lastAgentCheckUtc = now;
                     WatchdogAgent();
                 }
+
+                // Auszeit-Countdown: läuft nur, solange das Kind sie wirklich sieht (Bildschirm an, Overlay da).
+                int elapsed = _lastPenaltyTickUtc == DateTime.MinValue
+                    ? TickSeconds
+                    : (int)Math.Clamp((now - _lastPenaltyTickUtc).TotalSeconds, 0, TickSeconds * 2);
+                _lastPenaltyTickUtc = now;
+                _controller.TickPenalty(elapsed,
+                    SessionLauncher.HasActiveUserSession(),
+                    _controller.AgentSilence < TimeSpan.FromSeconds(45),
+                    _controller.ScreenActive);
 
                 // Tages-Nutzung zählen: nur wenn Kind angemeldet, Gerät nutzbar UND der Bildschirm
                 // wirklich an ist (zugeklappt / Bildschirm aus / Windows gesperrt zählt NICHT).
@@ -256,9 +267,22 @@ public sealed class EnforcementWorker : BackgroundService
     private async Task ExecuteCommandAsync(DeviceCommand cmd, PollContext ctx, ServerClient client,
         long haveVersion, CancellationToken ct)
     {
+        // Doppelt zugestellte Befehle (z. B. Ack verloren) nur einmal ausführen – sonst addiert sich eine Auszeit doppelt.
+        if (cmd.Type is CommandType.Timeout or CommandType.ClearTimeout
+            && !_controller.MarkCommandExecuted(cmd.CommandId))
+        {
+            _audit.Write("CMD", $"{cmd.Type} ({cmd.CommandId}) schon ausgeführt – übersprungen");
+            return;
+        }
         _audit.Write("CMD", $"Ausführen: {cmd.Type} ({cmd.CommandId})");
         switch (cmd.Type)
         {
+            case CommandType.Timeout:
+                _controller.AddPenalty(cmd.UnlockMinutes ?? 15, "gestört ohne Notfall");
+                break;
+            case CommandType.ClearTimeout:
+                _controller.ClearPenalty("Eltern");
+                break;
             case CommandType.Unlock:
                 _controller.RemoteUnlock(cmd.UnlockMinutes ?? ctx.UnlockGrace, "Fern-Befehl");
                 break;
