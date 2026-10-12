@@ -72,7 +72,7 @@
           <Border x:Name="PenaltyBarBack" Background="#33FFFFFF" CornerRadius="7" Height="14" Margin="10,2,10,10">
             <Border x:Name="PenaltyBarFill" Background="#FFD166" CornerRadius="7" HorizontalAlignment="Left" Width="0"/>
           </Border>
-          <TextBlock Text="⏸️ Die Uhr läuft nur, wenn der Laptop an ist und du diesen Bildschirm siehst. Zuklappen oder Weggehen hält sie an."
+          <TextBlock Text="⏸️ Die Uhr läuft nur, solange der Laptop an ist und du diesen Bildschirm siehst. Wenn du zuklappst oder weggehst, wartet sie auf dich."
                      FontSize="15" Opacity="0.85" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"/>
         </StackPanel>
       </Border>

@@ -55,17 +55,17 @@ public partial class LockWindow : Window
     // Auszeit: erklärt dem Kind ruhig, WARUM gesperrt ist.
     private static readonly string[] PenaltyMessages =
     {
-        "Wenn Mama oder Papa beschäftigt sind, darfst du nur bei einem Notfall stören. 🚨",
-        "Ein Notfall ist, wenn jemand verletzt ist, etwas kaputt geht oder du Angst hast. 💛",
-        "Nutze die Auszeit, um kurz nachzudenken. Danach geht's weiter. 🌱",
-        "Beim nächsten Mal: erst überlegen – ist es ein Notfall? Wenn nicht, kurz warten. ⏳",
+        "Kein Problem – jeder vergisst mal eine Regel. Wir haben dich trotzdem lieb! 💛",
+        "Bei einem Notfall darfst du IMMER kommen: wenn jemand verletzt ist, etwas kaputt geht oder du Angst hast. 🤗",
+        "Beim nächsten Mal kurz überlegen: Ist es ein Notfall? Wenn nicht, einfach ein bisschen warten. ⏳",
+        "Gleich geht's weiter. Vielleicht magst du solange etwas malen, lesen oder spielen? 🎨📖",
     };
 
     private static readonly string[] PenaltyBypassMessages =
     {
-        "Gut versucht! 😄 Aber die Auszeit läuft noch.",
-        "Die Auszeit geht erst vorbei, wenn die Uhr bei 0:00 ist. ⏳",
-        "Nur Mama oder Papa können die Auszeit beenden. 💛",
+        "Die Auszeit läuft noch ein kleines bisschen. ⏳",
+        "Gleich geht's weiter – die Uhr zählt schon runter! 😊",
+        "Nur Mama oder Papa können die Auszeit früher beenden. 💛",
     };
 
     // Freundliche Sprüche, wenn ein Umgehungsversuch erkannt wird.
@@ -145,12 +145,13 @@ public partial class LockWindow : Window
         }
         _penaltyTotalMinutes = totalMinutes > 0 ? totalMinutes : (int)Math.Ceiling(secondsRemaining / 60.0);
         int minutes = _penaltyTotalMinutes;
-        string why = "Du hast gestört, obwohl es kein Notfall war.\nDas ist gegen unsere Regel – deshalb ist der Laptop jetzt "
-                     + $"{minutes} Minuten gesperrt.";
+        string why = "Mama oder Papa waren gerade beschäftigt, und es war zum Glück kein Notfall.\n"
+                     + "Wir haben ausgemacht: Stören nur, wenn es wirklich wichtig ist. "
+                     + $"Darum macht der Laptop jetzt {minutes} Minuten Pause. 💛";
         if (count > 1)
             why += minutes == count * 15
-                ? $"\n({count}× gestört: {count} × 15 Minuten zusammengezählt)"
-                : $"\n({count}× gestört – die Zeiten werden zusammengezählt)";
+                ? $"\n(Das war jetzt {count}-mal – darum {count} × 15 Minuten zusammen.)"
+                : $"\n(Das war jetzt {count}-mal – darum werden die Zeiten zusammengezählt.)";
         PenaltyInfoText.Text = why;
         UpdateCountdown();
     }
@@ -204,7 +205,7 @@ public partial class LockWindow : Window
 
         if (_penaltyMode)
         {
-            HeadingText.Text = "Auszeit!";
+            HeadingText.Text = "Kurze Auszeit";
             BigEmoji.Text = "⏸️";
         }
         else if (_budgetMode)
