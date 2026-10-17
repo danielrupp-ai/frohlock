@@ -48,7 +48,7 @@ public partial class App : Application
         _poll.Tick += async (_, _) => await PollAsync();
         _poll.Start();
 
-        // Bildschirm an/aus, Deckel, Windows-Sperre -> Dienst zählt nur bei sichtbarem Bildschirm.
+        // Bildschirm an/aus, Deckel, externer Monitor, Windows-Sperre -> Dienst zählt nur bei sichtbarem Bildschirm.
         _screen.Start();
         _screen.Changed += async () => await SendAliveAsync();
 
@@ -62,7 +62,12 @@ public partial class App : Application
 
     private async Task SendAliveAsync()
     {
-        try { await _ipc.AliveAsync(_screen.DisplayOn, _screen.LidOpen, _screen.SessionLocked); } catch { }
+        try
+        {
+            _screen.RefreshExternalDisplay();
+            await _ipc.AliveAsync(_screen.DisplayOn, _screen.LidOpen, _screen.ExternalDisplay, _screen.SessionLocked);
+        }
+        catch { }
     }
 
     private bool _polling;

@@ -99,14 +99,35 @@ public static class UsageTimeline
 
 /// <summary>
 /// Wann zählt Bildschirmzeit? Nur wenn jemand angemeldet ist, der Laptop entsperrt und
-/// der Bildschirm wirklich AN ist (Deckel offen). Zugeklappt/Bildschirm aus/Windows gesperrt = keine Zeit.
+/// der Bildschirm wirklich AN ist (Deckel offen ODER ein externer Bildschirm läuft).
+/// Zugeklappt ohne externen Bildschirm/Bildschirm aus/Windows gesperrt = keine Zeit.
 /// </summary>
 public static class UsageGate
 {
     /// <summary>Ist der Bildschirm für das Kind sichtbar und nutzbar?</summary>
-    public static bool ScreenOn(bool displayOn, bool lidOpen, bool sessionLocked)
-        => displayOn && lidOpen && !sessionLocked;
+    /// <remarks>Zugeklappt + externer Monitor (Laptop als Desktop genutzt) zählt weiter.</remarks>
+    public static bool ScreenOn(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked)
+        => displayOn && (lidOpen || externalDisplay) && !sessionLocked;
 
     public static bool ShouldCount(bool userSessionActive, bool agentAlive, bool deviceLocked, bool screenOn)
         => userSessionActive && agentAlive && !deviceLocked && screenOn;
+}
+
+/// <summary>
+/// Einordnung der aktiven Bildschirmausgänge (Windows DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY):
+/// eingebautes Laptop-Panel oder externer Monitor/Fernseher/Funk-/USB-Bildschirm?
+/// </summary>
+public static class DisplayOutput
+{
+    public const uint Lvds = 6;
+    public const uint DisplayPortEmbedded = 11;
+    public const uint UdiEmbedded = 13;
+    public const uint Internal = 0x80000000;
+
+    /// <summary>
+    /// Alles außer dem eingebauten Panel zählt als extern (HDMI, DisplayPort, USB-C, Miracast,
+    /// DisplayLink, virtuelle Bildschirme …). Im Zweifel extern, damit Spielzeit nicht verloren geht.
+    /// </summary>
+    public static bool IsExternal(uint outputTechnology)
+        => outputTechnology is not (Lvds or DisplayPortEmbedded or UdiEmbedded or Internal);
 }

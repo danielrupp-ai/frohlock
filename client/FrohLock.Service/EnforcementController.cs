@@ -25,6 +25,7 @@ public sealed class EnforcementController
     // Bildschirmzustand, vom Agent gemeldet (Standard: an, bis der Agent etwas anderes sagt).
     private bool _displayOn = true;
     private bool _lidOpen = true;
+    private bool _externalDisplay;
     private bool _sessionLocked;
 
     public const int MaxPinFailuresBeforeLockout = 8;
@@ -34,24 +35,31 @@ public sealed class EnforcementController
     public TimeSpan AgentSilence { get { lock (_gate) return DateTime.UtcNow - _lastAgentAliveUtc; } }
 
     /// <summary>Bildschirmzustand der Sitzung übernehmen (kommt mit jedem Agent-Lebenszeichen).</summary>
-    public void SetScreenState(bool displayOn, bool lidOpen, bool sessionLocked)
+    public void SetScreenState(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked)
     {
         lock (_gate)
         {
-            bool before = UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked);
+            bool before = ScreenOnLocked();
+            bool externalOnlyBefore = before && !_lidOpen;
             _displayOn = displayOn;
             _lidOpen = lidOpen;
+            _externalDisplay = externalDisplay;
             _sessionLocked = sessionLocked;
-            bool after = UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked);
-            if (before != after)
+            bool after = ScreenOnLocked();
+            bool externalOnly = after && !lidOpen;
+            if (before != after || externalOnlyBefore != externalOnly)
                 _audit.Write("SCREEN", after
-                    ? "Bildschirm an – Bildschirmzeit zählt"
-                    : $"Pause: {(!lidOpen ? "Deckel zu" : !displayOn ? "Bildschirm aus" : "Windows gesperrt")} – zählt nicht");
+                    ? (externalOnly
+                        ? "Deckel zu, aber externer Bildschirm an – Bildschirmzeit zählt"
+                        : "Bildschirm an – Bildschirmzeit zählt")
+                    : $"Pause: {(!displayOn ? "Bildschirm aus" : sessionLocked ? "Windows gesperrt" : "Deckel zu")} – zählt nicht");
         }
     }
 
-    /// <summary>Bildschirm an, Deckel offen, Windows entsperrt?</summary>
-    public bool ScreenActive { get { lock (_gate) return UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked); } }
+    private bool ScreenOnLocked() => UsageGate.ScreenOn(_displayOn, _lidOpen, _externalDisplay, _sessionLocked);
+
+    /// <summary>Bildschirm an, Deckel offen (oder externer Bildschirm), Windows entsperrt?</summary>
+    public bool ScreenActive { get { lock (_gate) return ScreenOnLocked(); } }
 
     public EnforcementController(ITrustedClock clock, AuditLog audit, RuntimeState state)
     {
@@ -361,7 +369,7 @@ public sealed class EnforcementController
                 DailyBudgetMinutes = _config?.EffectiveDailyBudget(localNow.DayOfWeek) ?? 0,
                 UsageDay = localNow.ToString("yyyy-MM-dd"),
                 UsageSegments = TodayUsageSegmentsNoLock(),
-                ScreenActive = UsageGate.ScreenOn(_displayOn, _lidOpen, _sessionLocked),
+                ScreenActive = ScreenOnLocked(),
                 PenaltySecondsRemaining = _state.PenaltySecondsRemaining,
                 PenaltyCount = _state.PenaltyCount,
                 PenaltyTotalMinutes = _state.PenaltyTotalMinutes,

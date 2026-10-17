@@ -20,7 +20,7 @@ public sealed class DeviceStatus
     public int DailyBudgetMinutes { get; set; }
     public string UsageDay { get; set; } = "";
     public List<UsageSegmentView> UsageSegments { get; set; } = new();
-    /// <summary>Zählt gerade Bildschirmzeit? (Bildschirm an, Deckel offen, Windows entsperrt.)</summary>
+    /// <summary>Zählt gerade Bildschirmzeit? (Bildschirm an, Deckel offen oder externer Bildschirm, Windows entsperrt.)</summary>
     public bool ScreenActive { get; set; }
     /// <summary>Offene Auszeit (Sekunden) und wie oft sie verhängt wurde.</summary>
     public long PenaltySecondsRemaining { get; set; }

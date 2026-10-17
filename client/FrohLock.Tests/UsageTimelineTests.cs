@@ -64,12 +64,30 @@ public class UsageTimelineTests
     }
 
     [Theory]
-    [InlineData(true, true, false, true)]
-    [InlineData(false, true, false, false)]  // Bildschirm aus
-    [InlineData(true, false, false, false)]  // Deckel zu
-    [InlineData(true, true, true, false)]    // Windows gesperrt (Win+L)
-    public void Screen_must_be_visible(bool displayOn, bool lidOpen, bool sessionLocked, bool expected)
-        => Assert.Equal(expected, UsageGate.ScreenOn(displayOn, lidOpen, sessionLocked));
+    [InlineData(true, true, false, false, true)]
+    [InlineData(false, true, false, false, false)]  // Bildschirm aus
+    [InlineData(true, false, false, false, false)]  // Deckel zu, kein externer Bildschirm
+    [InlineData(true, false, true, false, true)]    // Deckel zu, externer Bildschirm -> zählt
+    [InlineData(true, true, true, false, true)]     // Deckel offen + externer Bildschirm
+    [InlineData(false, false, true, false, false)]  // alles aus (Monitor schläft)
+    [InlineData(true, false, true, true, false)]    // extern, aber Windows gesperrt
+    [InlineData(true, true, false, true, false)]    // Windows gesperrt (Win+L)
+    public void Screen_must_be_visible(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked, bool expected)
+        => Assert.Equal(expected, UsageGate.ScreenOn(displayOn, lidOpen, externalDisplay, sessionLocked));
+
+    [Theory]
+    [InlineData(6u, false)]           // LVDS (eingebautes Panel)
+    [InlineData(11u, false)]          // eDP (eingebautes Panel)
+    [InlineData(13u, false)]          // UDI eingebaut
+    [InlineData(0x80000000u, false)]  // INTERNAL
+    [InlineData(5u, true)]            // HDMI
+    [InlineData(10u, true)]           // DisplayPort extern
+    [InlineData(15u, true)]           // Miracast (Funk zum Fernseher)
+    [InlineData(16u, true)]           // USB/DisplayLink
+    [InlineData(18u, true)]           // DisplayPort über USB-C/Thunderbolt
+    [InlineData(0xFFFFFFFFu, true)]   // unbekannt -> im Zweifel extern
+    public void Classifies_external_displays(uint tech, bool expected)
+        => Assert.Equal(expected, DisplayOutput.IsExternal(tech));
 
     [Fact]
     public void Counts_only_when_everything_fits()

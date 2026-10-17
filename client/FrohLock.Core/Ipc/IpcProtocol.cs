@@ -45,8 +45,10 @@ public sealed class IpcMessage
     public int PenaltyTotalMinutes { get; set; }
 
     // Agent -> Dienst (mit AgentAlive): Bildschirmzustand der Sitzung. Nur bei Bildschirm AN,
-    // Deckel offen und entsperrter Windows-Sitzung zählt Bildschirmzeit.
+    // Deckel offen (oder externem Bildschirm) und entsperrter Windows-Sitzung zählt Bildschirmzeit.
     public bool DisplayOn { get; set; } = true;
     public bool LidOpen { get; set; } = true;
+    /// <summary>Läuft ein externer Monitor/Fernseher? Dann zählt es auch bei zugeklapptem Deckel.</summary>
+    public bool ExternalDisplay { get; set; }
     public bool SessionLocked { get; set; }
 }
