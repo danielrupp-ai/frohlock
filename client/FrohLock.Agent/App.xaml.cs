@@ -1,5 +1,7 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using FrohLock.Core.Schedule;
 
 namespace FrohLock.Agent;
 
@@ -18,6 +20,20 @@ public partial class App : Application
     private DispatcherTimer? _poll;
     private DispatcherTimer? _alive;
     private readonly ScreenStateMonitor _screen = new();
+
+    // Eigene Bildschirm-Aufzeichnung (unabhängig vom Dienst) – damit zählt der Dienst Lücken nach.
+    private readonly List<MinuteRange> _screenLedger = new();
+
+    // Sicherheitsnetz: antwortet der Schutzdienst bei eingeschaltetem Bildschirm minutenlang nicht,
+    // sperrt das Overlay selbst (nur wenn FrohLock eingerichtet ist und der Dienst installiert ist).
+    private const int ServiceSilentLockSeconds = 180;
+    internal const string ServiceSilentReason =
+        "Der Zeit-Wächter antwortet gerade nicht. Darum macht der Laptop zur Sicherheit eine Pause, " +
+        "bis er wieder da ist. Mama oder Papa können helfen. 💛";
+    private double _serviceSilentSeconds;
+    private DateTime _lastPollUtc = DateTime.MinValue;
+    private bool _serviceConfigured;
+    private DateTime _offlineMasterUntilUtc = DateTime.MinValue;
 
     private const int ReminderThresholdMinutes = 15;
     private DateTime _lastReminderUtc = DateTime.MinValue;
@@ -42,6 +58,12 @@ public partial class App : Application
         _hook.Install();
 
         _lock = new LockWindow(_ipc);
+        _lock.OfflineMasterUnlocked = () =>
+        {
+            _offlineMasterUntilUtc = DateTime.UtcNow.AddHours(8);
+            _serviceSilentSeconds = 0;
+            HideLock();
+        };
         _hook.OnBlockedKey = () => _lock?.ShowFriendlyBypass();
 
         _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -65,10 +87,17 @@ public partial class App : Application
         try
         {
             _screen.RefreshExternalDisplay();
-            await _ipc.AliveAsync(_screen.DisplayOn, _screen.LidOpen, _screen.ExternalDisplay, _screen.SessionLocked);
+            // Minute merken, wenn der Bildschirm sichtbar an ist und das Kind ihn nutzen kann (kein Overlay).
+            if (ScreenOnNow() && !(_lock?.IsVisible ?? false))
+                ScreenLedger.Mark(_screenLedger, DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60);
+            var ledgerCopy = _screenLedger.Select(r => new MinuteRange { Start = r.Start, End = r.End }).ToList();
+            await _ipc.AliveAsync(_screen.DisplayOn, _screen.LidOpen, _screen.ExternalDisplay, _screen.SessionLocked, ledgerCopy);
         }
         catch { }
     }
+
+    private bool ScreenOnNow()
+        => UsageGate.ScreenOn(_screen.DisplayOn, _screen.LidOpen, _screen.ExternalDisplay, _screen.SessionLocked);
 
     private bool _polling;
     private async Task PollAsync()
@@ -77,7 +106,27 @@ public partial class App : Application
         _polling = true;
         try
         {
+            var now = DateTime.UtcNow;
+            double step = _lastPollUtc == DateTime.MinValue ? 0 : Math.Clamp((now - _lastPollUtc).TotalSeconds, 0, 5);
+            _lastPollUtc = now;
+
             var status = await _ipc.GetStatusAsync();
+            if (status is null)
+            {
+                if (_serviceConfigured && ScreenOnNow()) _serviceSilentSeconds += step;
+                if (_serviceSilentSeconds >= ServiceSilentLockSeconds && now >= _offlineMasterUntilUtc && ServiceInstalled())
+                {
+                    _lock?.SetOffline(true);
+                    ShowLock(ServiceSilentReason);
+                    return;
+                }
+            }
+            else
+            {
+                _serviceSilentSeconds = 0;
+                _serviceConfigured = status.Configured;
+                _lock?.SetOffline(false);
+            }
             bool locked = status?.Locked ?? (_lock?.IsVisible ?? false);
 
             if (locked)
@@ -126,6 +175,12 @@ public partial class App : Application
         }
         if (_hook is not null) _hook.Active = true;
         _lastReminderMinutes = -1; // nach der Sperre wieder erinnern dürfen
+    }
+
+    private static bool ServiceInstalled()
+    {
+        try { return File.Exists(Path.Combine(AppContext.BaseDirectory, "FrohLockService.exe")); }
+        catch { return true; }
     }
 
     private void HideLock()

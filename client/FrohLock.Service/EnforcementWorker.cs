@@ -41,6 +41,14 @@ public sealed class EnforcementWorker : BackgroundService
     private DateTime _lastUsageSaveUtc = DateTime.MinValue;
     private DateTime _lastLoopSystemUtc = DateTime.MinValue;
     private DateTime _lastPenaltyTickUtc = DateTime.MinValue;
+    private long _lastLoopAwakeTick100ns;
+    private long _lastLoopAwake100ns;            // für den Wächter-Thread (Volatile)
+    private volatile bool _forceTimeSync;
+
+    /// <summary>So lange darf die Hauptschleife bei wachem Laptop stehen, dann Neustart.</summary>
+    private const int LoopStallLimitSeconds = 120;
+    /// <summary>Hartes Zeitlimit je Netz-Runde (Updates laden länger, laufen aber in eigener Runde weiter).</summary>
+    private const int NetworkRoundLimitSeconds = 120;
 
     public EnforcementWorker(EnforcementController controller, SignedConfigStore configStore,
         TrustedTimeProvider time, RsaSignatureVerifier verifier, AuditLog audit, RuntimeState state,
@@ -58,49 +66,56 @@ public sealed class EnforcementWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         _state.LastBootUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        _state.Save();
         _controller.SetConfig(_configStore.Load());
         _audit.Write("SERVICE", $"Start v{AppVersion}, Config v{_controller.Config?.ConfigVersion ?? 0}");
+        CheckGapSinceLastRun();
+        _state.Save();
 
         // Sofort einmal Zeit synchronisieren (nicht blockierend fürs Enforcement).
         _ = _time.SyncAsync(ct);
+
+        // Netz (Server, Befehle, Zeit-Sync, Updates) läuft GETRENNT: eine hängende Verbindung darf
+        // Zählen und Sperren nie anhalten.
+        _ = Task.Run(() => NetworkLoopAsync(ct), ct);
+        StartLoopWatchdog(ct);
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 var now = DateTime.UtcNow;
+                long awake = AwakeClock.Now100ns;
+                Volatile.Write(ref _lastLoopAwake100ns, awake);
 
-                // Aufwachen aus Schlaf/Standby erkennen: die Schleife war viel länger als ein Tick weg
-                // -> sofort neu synchronisieren, damit die Zeit (und damit die Sperre) stimmt.
-                bool wokeUp = _lastLoopSystemUtc != DateTime.MinValue
-                              && (now - _lastLoopSystemUtc) > TimeSpan.FromSeconds(TickSeconds * 3 + 30);
+                // Lücke erkennen: Schleife war viel länger als ein Tick weg. Die Windows-Uhr ohne
+                // Schlafzeit sagt, ob der Laptop geschlafen hat oder wach war, während der Dienst stand.
+                if (_lastLoopSystemUtc != DateTime.MinValue)
+                {
+                    double wallGap = (now - _lastLoopSystemUtc).TotalSeconds;
+                    double awakeGap = (awake - _lastLoopAwakeTick100ns) / 10_000_000.0;
+                    switch (GapAnalysis.Classify(wallGap, awakeGap))
+                    {
+                        case GapKind.Slept:
+                            _audit.Write("TIME", $"Aufwachen erkannt (Laptop schlief {GapAnalysis.Duration((long)(wallGap - awakeGap))}) – erzwinge Zeit-Sync");
+                            _forceTimeSync = true;
+                            break;
+                        case GapKind.StalledAwake:
+                            _controller.RegisterStalledGap(
+                                new DateTimeOffset(now).ToUnixTimeSeconds() - (long)Math.Min(wallGap, awakeGap),
+                                new DateTimeOffset(now).ToUnixTimeSeconds(), (long)awakeGap, "hing");
+                            _forceTimeSync = true;
+                            break;
+                    }
+                }
                 _lastLoopSystemUtc = now;
-
-                if (wokeUp || (now - _lastTimeSyncAttemptUtc) > TimeSpan.FromMinutes(TimeSyncIntervalMinutes()))
-                {
-                    _lastTimeSyncAttemptUtc = now;
-                    if (wokeUp) _audit.Write("TIME", "Aufwachen erkannt – erzwinge Zeit-Sync");
-                    _ = SafeSyncTimeAsync(ct);
-                }
-
-                var pollCtx = GetPollContext();
-                if (pollCtx is not null && (now - _lastServerPollUtc) > TimeSpan.FromSeconds(pollCtx.PollSeconds))
-                {
-                    _lastServerPollUtc = now;
-                    await PollServerAsync(pollCtx, ct).ConfigureAwait(false);
-                }
-                // Schnelle Befehls-Abfrage: Fern-Sperren/-Entsperren wirkt in ~5 s statt erst beim langsamen Poll.
-                else if (pollCtx is not null && (now - _lastCmdPollUtc) > TimeSpan.FromSeconds(5))
-                {
-                    _lastCmdPollUtc = now;
-                    await PollCommandsFastAsync(pollCtx, ct).ConfigureAwait(false);
-                }
+                _lastLoopAwakeTick100ns = awake;
+                _controller.RecordTick(now, awake);
 
                 if ((now - _lastAgentCheckUtc) > TimeSpan.FromSeconds(15))
                 {
                     _lastAgentCheckUtc = now;
                     WatchdogAgent();
+                    _controller.ResolvePendingGaps();
                 }
 
                 // Auszeit-Countdown: läuft nur, solange das Kind sie wirklich sieht (Bildschirm an, Overlay da).
@@ -137,6 +152,96 @@ public sealed class EnforcementWorker : BackgroundService
             }
 
             await Task.Delay(TimeSpan.FromSeconds(TickSeconds), ct).ContinueWith(_ => { }).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Nach einem (Neu-)Start: lief der Dienst eine Weile gar nicht, obwohl der Laptop wach war
+    /// (beendet, abgestürzt, angehalten)? Gleiche Windows-Sitzung erkennt man daran, dass die Uhr
+    /// ohne Schlafzeit seit dem letzten Takt weitergelaufen ist.
+    /// </summary>
+    private void CheckGapSinceLastRun()
+    {
+        try
+        {
+            var (lastWall, lastAwake) = _controller.LastTick;
+            if (lastWall <= 0 || lastAwake <= 0) return;
+            long nowWall = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            double awakeGap = AwakeClock.SecondsSince(lastAwake);
+            double wallGap = nowWall - lastWall;
+            // Neustart des PCs: Uhr ohne Schlafzeit beginnt bei 0 -> kleiner als zuletzt bzw. größer als die echte Lücke.
+            bool sameWindowsRun = awakeGap > 0 && awakeGap <= wallGap + 60;
+            if (!sameWindowsRun) return;
+            if (GapAnalysis.Classify(wallGap, awakeGap) == GapKind.StalledAwake)
+                _controller.RegisterStalledGap(nowWall - (long)Math.Min(wallGap, awakeGap), nowWall, (long)awakeGap, "aus");
+        }
+        catch (Exception ex) { _log.LogDebug(ex, "Lücken-Prüfung beim Start fehlgeschlagen"); }
+    }
+
+    /// <summary>
+    /// Wächter auf eigenem Thread: steht die Hauptschleife bei WACHEM Laptop länger als 2 Minuten,
+    /// beendet sich der Dienst hart – Windows startet ihn nach 5 s neu (Wiederherstellungs-Aktion).
+    /// Schlafen zählt nicht mit (Uhr ohne Schlafzeit), ein Standby löst also nichts aus.
+    /// </summary>
+    private void StartLoopWatchdog(CancellationToken ct)
+    {
+        var t = new Thread(() =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(10));
+                long last = Volatile.Read(ref _lastLoopAwake100ns);
+                if (last == 0 || ct.IsCancellationRequested) continue;
+                double stalled = AwakeClock.SecondsSince(last);
+                if (stalled > LoopStallLimitSeconds)
+                {
+                    try { _audit.Write("WATCHDOG", $"Hauptschleife stand {(int)stalled} s bei wachem Laptop – Dienst startet neu"); } catch { }
+                    try { _state.Save(); } catch { }
+                    Environment.FailFast("FrohLock: Hauptschleife hängt");
+                }
+            }
+        }) { IsBackground = true, Name = "FrohLock-Schleifenwaechter" };
+        t.Start();
+    }
+
+    /// <summary>Server-Kontakt, Befehle und Zeit-Sync – mit hartem Zeitlimit je Runde.</summary>
+    private async Task NetworkLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await NetworkRoundAsync(ct).WaitAsync(TimeSpan.FromSeconds(NetworkRoundLimitSeconds), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (TimeoutException) { _log.LogWarning("Netz-Runde dauerte zu lange – wird übersprungen"); }
+            catch (Exception ex) { _log.LogDebug(ex, "Netz-Runde Fehler"); }
+
+            await Task.Delay(TimeSpan.FromSeconds(TickSeconds), ct).ContinueWith(_ => { }).ConfigureAwait(false);
+        }
+    }
+
+    private async Task NetworkRoundAsync(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        if (_forceTimeSync || (now - _lastTimeSyncAttemptUtc) > TimeSpan.FromMinutes(TimeSyncIntervalMinutes()))
+        {
+            _forceTimeSync = false;
+            _lastTimeSyncAttemptUtc = now;
+            _ = SafeSyncTimeAsync(ct);
+        }
+
+        var pollCtx = GetPollContext();
+        if (pollCtx is not null && (now - _lastServerPollUtc) > TimeSpan.FromSeconds(pollCtx.PollSeconds))
+        {
+            _lastServerPollUtc = now;
+            await PollServerAsync(pollCtx, ct).ConfigureAwait(false);
+        }
+        // Schnelle Befehls-Abfrage: Fern-Sperren/-Entsperren wirkt in ~5 s statt erst beim langsamen Poll.
+        else if (pollCtx is not null && (now - _lastCmdPollUtc) > TimeSpan.FromSeconds(5))
+        {
+            _lastCmdPollUtc = now;
+            await PollCommandsFastAsync(pollCtx, ct).ConfigureAwait(false);
         }
     }
 
@@ -311,7 +416,17 @@ public sealed class EnforcementWorker : BackgroundService
         }
     }
 
+    private int _updateRunning;
+
     private async Task TryUpdateAsync(PollContext ctx, ServerClient client, CancellationToken ct)
+    {
+        // Ein großer Download kann länger als eine Netz-Runde dauern – dann nicht parallel ein zweites Mal starten.
+        if (Interlocked.Exchange(ref _updateRunning, 1) == 1) return;
+        try { await TryUpdateCoreAsync(ctx, client, ct).ConfigureAwait(false); }
+        finally { Volatile.Write(ref _updateRunning, 0); }
+    }
+
+    private async Task TryUpdateCoreAsync(PollContext ctx, ServerClient client, CancellationToken ct)
     {
         using var http = TlsPinning.CreateClient(ctx.TlsPins, TimeSpan.FromMinutes(5));
         var updater = new Updater(http, _verifier, _audit);

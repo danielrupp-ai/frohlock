@@ -50,5 +50,7 @@ public sealed class IpcMessage
     public bool LidOpen { get; set; } = true;
     /// <summary>Läuft ein externer Monitor/Fernseher? Dann zählt es auch bei zugeklapptem Deckel.</summary>
     public bool ExternalDisplay { get; set; }
+    /// <summary>Eigene Aufzeichnung des Overlays: wann war der Bildschirm an (letzte 24 h)? Für das Nachzählen.</summary>
+    public List<MinuteRange>? ScreenOnMinutes { get; set; }
     public bool SessionLocked { get; set; }
 }

@@ -26,6 +26,9 @@ public sealed class EnforcementController
     private bool _displayOn = true;
     private bool _lidOpen = true;
     private bool _externalDisplay;
+    // Eigene Bildschirm-Aufzeichnung des Overlays (für das Nachzählen von Lücken).
+    private List<MinuteRange> _screenLedger = new();
+    private DateTime _screenLedgerUtc = DateTime.MinValue;
     private bool _sessionLocked;
 
     public const int MaxPinFailuresBeforeLockout = 8;
@@ -35,10 +38,16 @@ public sealed class EnforcementController
     public TimeSpan AgentSilence { get { lock (_gate) return DateTime.UtcNow - _lastAgentAliveUtc; } }
 
     /// <summary>Bildschirmzustand der Sitzung übernehmen (kommt mit jedem Agent-Lebenszeichen).</summary>
-    public void SetScreenState(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked)
+    public void SetScreenState(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked,
+        List<MinuteRange>? screenLedger = null)
     {
         lock (_gate)
         {
+            if (screenLedger is not null)
+            {
+                _screenLedger = screenLedger;
+                _screenLedgerUtc = DateTime.UtcNow;
+            }
             bool before = ScreenOnLocked();
             bool externalOnlyBefore = before && !_lidOpen;
             _displayOn = displayOn;
@@ -55,6 +64,91 @@ public sealed class EnforcementController
                     : $"Pause: {(!displayOn ? "Bildschirm aus" : sessionLocked ? "Windows gesperrt" : "Deckel zu")} – zählt nicht");
         }
     }
+
+    /// <summary>
+    /// Takt der Hauptschleife festhalten (normale Uhr + Windows-Uhr ohne Schlafzeit), damit auch ein
+    /// neu gestarteter Dienst erkennt, ob er bei wachem Laptop gefehlt hat.
+    /// </summary>
+    public void RecordTick(DateTime wallUtc, long awake100ns)
+    {
+        lock (_gate)
+        {
+            _state.LastTickWallUnix = new DateTimeOffset(wallUtc).ToUnixTimeSeconds();
+            _state.LastTickAwake100ns = awake100ns;
+        }
+    }
+
+    public (long wallUnix, long awake100ns) LastTick
+    {
+        get { lock (_gate) return (_state.LastTickWallUnix, _state.LastTickAwake100ns); }
+    }
+
+    /// <summary>
+    /// Der Laptop war wach, aber der Dienst hat nicht gezählt. Merken, melden und – sobald das Overlay
+    /// seine Bildschirm-Aufzeichnung schickt – die verpasste Bildschirmzeit nachzählen.
+    /// </summary>
+    public void RegisterStalledGap(long fromUnix, long toUnix, long awakeSeconds, string cause)
+    {
+        lock (_gate)
+        {
+            _audit.Write("LUECKE", $"⚠ FrohLock {(cause == "aus" ? "lief nicht" : "stand still")} " +
+                $"{LocalHm(fromUnix)}–{LocalHm(toUnix)} ({GapAnalysis.Duration(awakeSeconds)}), obwohl der Laptop wach war – prüfe Bildschirmzeit");
+            _state.PendingGaps.Add(new PendingGap
+            {
+                FromUnix = fromUnix, ToUnix = toUnix, AwakeSeconds = awakeSeconds,
+                DetectedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Cause = cause
+            });
+            if (_state.PendingGaps.Count > 20) _state.PendingGaps.RemoveRange(0, _state.PendingGaps.Count - 20);
+            _state.Save();
+        }
+    }
+
+    /// <summary>
+    /// Offene Lücken mit der Bildschirm-Aufzeichnung des Overlays abgleichen: war der Bildschirm an,
+    /// wird die Zeit nachgezählt. Ohne frische Aufzeichnung wird nach 10 Minuten aufgegeben.
+    /// </summary>
+    public void ResolvePendingGaps()
+    {
+        lock (_gate)
+        {
+            if (_state.PendingGaps.Count == 0) return;
+            long nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            bool changed = false;
+            foreach (var gap in _state.PendingGaps.ToList())
+            {
+                // Aufzeichnung muss NACH dem Ende der Lücke geschickt worden sein (sonst fehlt der Zeitraum).
+                bool ledgerFresh = _screenLedgerUtc != DateTime.MinValue
+                                   && new DateTimeOffset(_screenLedgerUtc).ToUnixTimeSeconds() >= gap.ToUnix;
+                if (ledgerFresh)
+                {
+                    long screenSeconds = ScreenLedger.OverlapSeconds(_screenLedger, gap.FromUnix, gap.ToUnix);
+                    if (screenSeconds >= 60 && _config is not null)
+                    {
+                        var utc = _clock.UtcNow;
+                        long counted = _state.AddMissedUsage(utc.ToLocalTime(), gap.FromUnix, gap.ToUnix, screenSeconds);
+                        _audit.Write("LUECKE", $"⚠ Bildschirm war {GapAnalysis.Duration(screenSeconds)} an, während FrohLock " +
+                            $"nicht zählte ({LocalHm(gap.FromUnix)}–{LocalHm(gap.ToUnix)}) – {GapAnalysis.Duration(counted)} nachgezählt");
+                    }
+                    else
+                    {
+                        _audit.Write("LUECKE", $"Bildschirm war {LocalHm(gap.FromUnix)}–{LocalHm(gap.ToUnix)} aus – nichts nachzuzählen");
+                    }
+                    _state.PendingGaps.Remove(gap);
+                    changed = true;
+                }
+                else if (nowUnix - gap.DetectedUnix > 600)
+                {
+                    _audit.Write("LUECKE", $"⚠ {LocalHm(gap.FromUnix)}–{LocalHm(gap.ToUnix)}: Overlay meldete sich nicht – " +
+                        "Bildschirmzeit nicht nachzählbar");
+                    _state.PendingGaps.Remove(gap);
+                    changed = true;
+                }
+            }
+            if (changed) _state.Save();
+        }
+    }
+
+    private static string LocalHm(long unix) => DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime.ToString("HH:mm");
 
     private bool ScreenOnLocked() => UsageGate.ScreenOn(_displayOn, _lidOpen, _externalDisplay, _sessionLocked);
 

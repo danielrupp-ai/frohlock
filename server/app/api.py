@@ -85,6 +85,7 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
              json.dumps(hb.usageSegments[:100]), hb.usageDay, 1 if hb.screenActive else 0,
              hb.penaltySecondsRemaining, hb.penaltyCount, device_id),
         )
+        _remember_gap_alerts(c, device_id, hb.recentAudit)
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
         # Abschnitte „von wann bis wann" je Tag mitschreiben (für die Zeitleiste im Admin, auch rückwirkend).
@@ -97,6 +98,23 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
             (device_id, day, hb.usageMinutesToday, segs, hb.dailyBudgetMinutes),
         )
     return {"ok": True}
+
+
+def _remember_gap_alerts(c, device_id: str, recent_audit: str) -> None:
+    """⚠-Lücken („FrohLock stand still, obwohl der Laptop wach war") dauerhaft merken –
+    das Geräte-Protokoll zeigt nur die letzten Zeilen, die Warnung darf nicht wegrollen."""
+    lines = [ln.strip() for ln in (recent_audit or "").splitlines()
+             if "\tLUECKE\t" in ln and "⚠" in ln]
+    if not lines:
+        return
+    row = c.execute("SELECT gap_alerts FROM devices WHERE id=?", (device_id,)).fetchone()
+    try:
+        known = json.loads(row["gap_alerts"]) if row and row["gap_alerts"] else []
+    except ValueError:
+        known = []
+    merged = known + [ln for ln in lines if ln not in known]
+    if len(merged) != len(known):
+        c.execute("UPDATE devices SET gap_alerts=? WHERE id=?", (json.dumps(merged[-30:]), device_id))
 
 
 def _version_tuple(v: str) -> tuple:

@@ -133,8 +133,10 @@ public sealed class IpcServer : BackgroundService
                 return new IpcMessage { Kind = IpcKind.PinResult, Success = ok, PinFailuresRemaining = remaining };
             }
             case IpcKind.AgentAlive:
-                _controller.SetScreenState(msg.DisplayOn, msg.LidOpen, msg.ExternalDisplay, msg.SessionLocked);
+                _controller.SetScreenState(msg.DisplayOn, msg.LidOpen, msg.ExternalDisplay, msg.SessionLocked,
+                    msg.ScreenOnMinutes);
                 _onAgentAlive();
+                _controller.ResolvePendingGaps();
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
             case IpcKind.RequestLock:
                 _controller.ForceLock(msg.Reason);

@@ -33,6 +33,18 @@
     Mehrere Auszeiten addieren sich. Eltern-PIN oder „Entsperren" beenden sie ebenfalls.</p>
 </div>
 
+{% if gap_alerts %}
+<div class="card" style="border:2px solid #ff5252">
+  <h2>⚠ FrohLock hat zeitweise nicht gezählt</h2>
+  <p class="muted" style="margin:0 0 10px">Der Laptop war wach, aber der Schutzdienst lief nicht (hing, angehalten oder beendet).
+    War der Bildschirm in der Zeit an, wurde die Zeit nachgezählt. Häufen sich diese Meldungen, sollte das Konto des Kindes ein
+    <b>Standardkonto</b> sein (kein Administrator).</p>
+  <ul style="margin:0;padding-left:18px">
+    {% for a in gap_alerts %}<li style="margin:4px 0"><b>{{ a.when }}</b> – {{ a.msg }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <div class="card" id="zeit">
   <h2>Bildschirmzeit</h2>
   {% if "screen_active" in dev.keys() and dev["screen_active"] == 0 %}

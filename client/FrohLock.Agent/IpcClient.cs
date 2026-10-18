@@ -35,10 +35,11 @@ public sealed class IpcClient
     public Task<IpcMessage?> SubmitPinAsync(string pin, CancellationToken ct = default)
         => SendAsync(new IpcMessage { Kind = IpcKind.SubmitPin, Pin = pin }, ct: ct);
 
-    public Task<IpcMessage?> AliveAsync(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked, CancellationToken ct = default)
+    public Task<IpcMessage?> AliveAsync(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked,
+        List<FrohLock.Core.Schedule.MinuteRange>? screenOnMinutes = null, CancellationToken ct = default)
         => SendAsync(new IpcMessage
         {
             Kind = IpcKind.AgentAlive, DisplayOn = displayOn, LidOpen = lidOpen,
-            ExternalDisplay = externalDisplay, SessionLocked = sessionLocked
+            ExternalDisplay = externalDisplay, SessionLocked = sessionLocked, ScreenOnMinutes = screenOnMinutes
         }, ct: ct);
 }

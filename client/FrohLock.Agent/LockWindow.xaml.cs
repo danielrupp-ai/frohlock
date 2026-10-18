@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using FrohLock.Core;
+using FrohLock.Core.Crypto;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
@@ -9,6 +11,13 @@ namespace FrohLock.Agent;
 public partial class LockWindow : Window
 {
     private readonly IpcClient _ipc;
+    private bool _offline;
+
+    /// <summary>Notfall-PIN hat lokal freigegeben, weil der Dienst nicht antwortet.</summary>
+    public Action? OfflineMasterUnlocked { get; set; }
+
+    /// <summary>Dienst antwortet nicht – PIN-Feld prüft dann lokal nur den Notfall-PIN.</summary>
+    public void SetOffline(bool offline) => _offline = offline;
     private readonly DispatcherTimer _assertTimer;
     private readonly DispatcherTimer _messageTimer;
     private readonly DispatcherTimer _bubbleHideTimer;
@@ -306,6 +315,15 @@ public partial class LockWindow : Window
             if (string.IsNullOrEmpty(pin)) { FeedbackText.Text = "Bitte PIN eingeben."; return; }
             var reply = await _ipc.SubmitPinAsync(pin);
             PinBox.Clear();
+            // Dienst antwortet nicht: nur der Master-/Notfall-PIN kann hier lokal freigeben.
+            if (reply is null && _offline
+                && await Task.Run(() => Branding.IsMasterPin(pin, PinHasher.Verify)))
+            {
+                FeedbackText.Foreground = System.Windows.Media.Brushes.LightGreen;
+                FeedbackText.Text = "Entsperrt (Notfall-PIN). 🌈";
+                OfflineMasterUnlocked?.Invoke();
+                return;
+            }
             if (reply is { Success: true })
             {
                 FeedbackText.Foreground = System.Windows.Media.Brushes.LightGreen;

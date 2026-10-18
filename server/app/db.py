@@ -89,6 +89,7 @@ MIGRATIONS = [
     "ALTER TABLE usage_daily ADD COLUMN budget INTEGER",
     "ALTER TABLE devices ADD COLUMN penalty_seconds INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN penalty_count INTEGER DEFAULT 0",
+    "ALTER TABLE devices ADD COLUMN gap_alerts TEXT",
 ]
 
 

@@ -51,6 +51,33 @@ def _berlin_now():
         return datetime.datetime.now()
 
 
+def _gap_alerts(dev) -> list[dict]:
+    """Gemerkte ⚠-Lücken (neueste zuerst) mit Berliner Uhrzeit, für die Geräteseite."""
+    import datetime
+    raw = dev["gap_alerts"] if "gap_alerts" in dev.keys() and dev["gap_alerts"] else "[]"
+    try:
+        lines = json.loads(raw)
+    except ValueError:
+        return []
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Europe/Berlin")
+    except Exception:
+        tz = None
+    out = []
+    for ln in reversed(lines):
+        ts, _, rest = ln.partition("\t")
+        _, _, msg = rest.partition("\t")
+        when = ts
+        try:
+            d = datetime.datetime.fromisoformat(ts[:19]).replace(tzinfo=datetime.timezone.utc)
+            when = (d.astimezone(tz) if tz else d).strftime("%d.%m. %H:%M")
+        except ValueError:
+            pass
+        out.append({"when": when, "msg": msg.replace("⚠ ", ""), "counted": "nachgezählt" in msg})
+    return out[:15]
+
+
 def _effective_budget(draft: dict, weekday_py: int) -> int:
     """Tageslimit wie im Client: Wochentag-Wert (0=So..6=Sa) > 0 überschreibt den Standard."""
     wb = ((draft.get("dailyBudgetByWeekday") or []) + [0] * 7)[:7]
@@ -249,6 +276,8 @@ def device_detail(request: Request, device_id: str):
     wb = (wb + [0] * 7)[:7]
     weekday_budgets = [{"idx": d, "label": lbl, "value": wb[d]} for d, lbl in DAYS]
 
+    gap_alerts = _gap_alerts(dev)
+
     return templates.TemplateResponse("device.html", {
         "request": request, "dev": dev, "version": version, "draft": draft,
         "windows": windows, "days": DAYS, "audit": audit_rows, "now": int(time.time()),
@@ -256,6 +285,7 @@ def device_detail(request: Request, device_id: str):
         "usage_week": usage_week, "usage_max": max_min, "budget": budget,
         "weekday_budgets": weekday_budgets,
         "timeline": timeline,
+        "gap_alerts": gap_alerts,
         "penalty": _penalty_status(dev), "timeout_minutes": TIMEOUT_MINUTES,
         "flash": request.query_params.get("ok", ""),
         "usage_today": dev["usage_today"] if "usage_today" in dev.keys() else 0,
