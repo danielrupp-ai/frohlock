@@ -39,8 +39,41 @@ public partial class App : Application
     private DateTime _lastReminderUtc = DateTime.MinValue;
     private int _lastReminderMinutes = -1;
 
+    private static readonly string CrashLogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FrohLock", "agent-crash.txt");
+
+    /// <summary>Absturz festhalten – der nächste Start meldet ihn dem Dienst (Diagnose für die Eltern).</summary>
+    private static void WriteCrash(Exception? ex)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(CrashLogPath)!);
+            File.WriteAllText(CrashLogPath, $"{DateTime.Now:dd.MM. HH:mm} {ex?.GetType().Name}: {ex?.Message} @ {ex?.TargetSite?.Name}");
+        }
+        catch { }
+    }
+
+    private async Task ReportPreviousCrashAsync()
+    {
+        try
+        {
+            if (!File.Exists(CrashLogPath)) return;
+            var text = File.ReadAllText(CrashLogPath);
+            var reply = await _ipc.SendAsync(new FrohLock.Core.Ipc.IpcMessage
+            {
+                Kind = FrohLock.Core.Ipc.IpcKind.AgentCrashReport, Reason = text
+            });
+            if (reply is not null) File.Delete(CrashLogPath);
+        }
+        catch { }
+    }
+
     private void OnStartup(object sender, StartupEventArgs e)
     {
+        DispatcherUnhandledException += (_, a) => WriteCrash(a.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, a) => WriteCrash(a.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, a) => { WriteCrash(a.Exception); a.SetObserved(); };
+
         // Reiner Anzeige-Modus (Benutzerübersicht) – kein Overlay, keine Sperre.
         if (e.Args.Any(a => string.Equals(a, "--status", StringComparison.OrdinalIgnoreCase)))
         {
@@ -80,6 +113,7 @@ public partial class App : Application
         _ = SendAliveAsync();
 
         _ = PollAsync();
+        _ = ReportPreviousCrashAsync();
     }
 
     private async Task SendAliveAsync()

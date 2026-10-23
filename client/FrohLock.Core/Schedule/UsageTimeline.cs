@@ -109,8 +109,12 @@ public static class UsageGate
     public static bool ScreenOn(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked)
         => displayOn && (lidOpen || externalDisplay) && !sessionLocked;
 
+    /// <summary>
+    /// Zählt Bildschirmzeit? Fehlt das Overlay (abgestürzt oder beendet), weiß niemand, ob der
+    /// Bildschirm an ist – dann wird gezählt, sonst ließe sich die Zeit durch Beenden des Overlays umgehen.
+    /// </summary>
     public static bool ShouldCount(bool userSessionActive, bool agentAlive, bool deviceLocked, bool screenOn)
-        => userSessionActive && agentAlive && !deviceLocked && screenOn;
+        => userSessionActive && !deviceLocked && (!agentAlive || screenOn);
 }
 
 /// <summary>

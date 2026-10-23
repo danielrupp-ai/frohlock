@@ -95,6 +95,7 @@ public class UsageTimelineTests
         Assert.True(UsageGate.ShouldCount(true, true, false, true));
         Assert.False(UsageGate.ShouldCount(true, true, false, false)); // zugeklappt
         Assert.False(UsageGate.ShouldCount(true, true, true, true));   // schon gesperrt
-        Assert.False(UsageGate.ShouldCount(true, false, false, true)); // Agent schweigt (Standby)
+        Assert.True(UsageGate.ShouldCount(true, false, false, false)); // Overlay fehlt -> im Zweifel zählen
+        Assert.False(UsageGate.ShouldCount(false, false, false, true)); // niemand angemeldet
     }
 }

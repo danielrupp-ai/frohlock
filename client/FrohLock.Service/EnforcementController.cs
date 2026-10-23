@@ -21,6 +21,7 @@ public sealed class EnforcementController
     private LockConfig? _config;
     private ScheduleEngine? _engine;
     private DateTime _lastAgentAliveUtc = DateTime.MinValue;
+    private long _lastAgentAliveAwake100ns;
 
     // Bildschirmzustand, vom Agent gemeldet (Standard: an, bis der Agent etwas anderes sagt).
     private bool _displayOn = true;
@@ -34,8 +35,20 @@ public sealed class EnforcementController
     public const int MaxPinFailuresBeforeLockout = 8;
 
     /// <summary>Watchdog: Zeitpunkt des letzten Agent-Lebenszeichens.</summary>
-    public void MarkAgentAlive() { lock (_gate) _lastAgentAliveUtc = DateTime.UtcNow; }
-    public TimeSpan AgentSilence { get { lock (_gate) return DateTime.UtcNow - _lastAgentAliveUtc; } }
+    public void MarkAgentAlive() { lock (_gate) { _lastAgentAliveUtc = DateTime.UtcNow; _lastAgentAliveAwake100ns = Interop.AwakeClock.Now100ns; } }
+
+    /// <summary>
+    /// Wie lange schweigt der Agent – gemessen in WACHER Zeit (Schlaf zählt nicht), damit nach dem
+    /// Aufwachen nicht fälschlich „Agent fehlt" erkannt wird, bevor er sich melden konnte.
+    /// </summary>
+    public TimeSpan AgentSilence
+    {
+        get
+        {
+            lock (_gate)
+                return TimeSpan.FromSeconds(Math.Max(0, Interop.AwakeClock.SecondsSince(_lastAgentAliveAwake100ns)));
+        }
+    }
 
     /// <summary>Bildschirmzustand der Sitzung übernehmen (kommt mit jedem Agent-Lebenszeichen).</summary>
     public void SetScreenState(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked,
@@ -157,6 +170,7 @@ public sealed class EnforcementController
 
     public EnforcementController(ITrustedClock clock, AuditLog audit, RuntimeState state)
     {
+        _lastAgentAliveAwake100ns = Interop.AwakeClock.Now100ns; // Schonfrist ab Dienststart
         _clock = clock;
         _audit = audit;
         _state = state;
@@ -202,6 +216,10 @@ public sealed class EnforcementController
             // Enforcement beginnt erst, wenn eine Konfiguration MIT gesetztem PIN vorliegt.
             if (_config is null || _engine is null || string.IsNullOrEmpty(_config.PinHash))
                 return LockDecision.Unlocked("Noch nicht eingerichtet");
+
+            // „Sofort sperren" der Eltern: sperrt unabhängig von Uhrzeit und Tageslimit.
+            if (_state.ForcedLock)
+                return LockDecision.Locked("Mama oder Papa haben den Laptop gerade gesperrt. 💛");
 
             var utc = _clock.UtcNow;
             var age = _clock.Age;
@@ -305,6 +323,7 @@ public sealed class EnforcementController
                 var masterUntil = _clock.UtcNow.AddHours(8);
                 _state.MasterUnlockUntilUnix = new DateTimeOffset(masterUntil).ToUnixTimeSeconds();
                 _state.UnlockUntilUnix = _state.MasterUnlockUntilUnix;
+                _state.ForcedLock = false;
                 _state.PinFailuresToday = 0;
                 _state.PenaltySecondsRemaining = 0;
                 _state.PenaltyCount = 0;
@@ -327,6 +346,8 @@ public sealed class EnforcementController
             {
                 var until = _clock.UtcNow.AddMinutes(Math.Max(1, _config.UnlockGraceMinutes));
                 _state.UnlockUntilUnix = new DateTimeOffset(until).ToUnixTimeSeconds();
+                if (_state.ForcedLock) _audit.Write("LOCK", "Sofortsperre durch Eltern-PIN aufgehoben");
+                _state.ForcedLock = false;
                 if (_state.PenaltySecondsRemaining > 0) _audit.Write("AUSZEIT", "Durch Eltern-PIN aufgehoben");
                 _state.PenaltySecondsRemaining = 0;
                 _state.PenaltyCount = 0;
@@ -414,6 +435,14 @@ public sealed class EnforcementController
         }
     }
 
+    /// <summary>Absturz des Overlays ins Geräte-Protokoll (Text gekürzt, kommt aus dem Nutzerprozess).</summary>
+    public void ReportAgentCrash(string text)
+    {
+        var clean = (text ?? "").Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ').Trim();
+        if (clean.Length > 300) clean = clean[..300];
+        if (clean.Length > 0) _audit.Write("OVERLAY", $"⚠ Sperrbildschirm war abgestürzt: {clean}");
+    }
+
     /// <summary>Sofort sperren (Fern-Befehl oder Overlay-Manipulation erkannt).</summary>
     public void ForceLock(string reason)
     {
@@ -421,8 +450,9 @@ public sealed class EnforcementController
         {
             _state.UnlockUntilUnix = 0;
             _state.MasterUnlockUntilUnix = 0; // auch die Master-Entsperrung beenden (Admin gewinnt)
+            _state.ForcedLock = true;          // bleibt gesperrt, bis Eltern freigeben
             _state.Save();
-            _audit.Write("LOCK", $"Sofortsperre: {reason}");
+            _audit.Write("LOCK", $"Sofortsperre: {reason} – gesperrt bis zur Freigabe durch Eltern");
         }
     }
 
@@ -433,6 +463,7 @@ public sealed class EnforcementController
         {
             var until = _clock.UtcNow.AddMinutes(Math.Max(1, minutes));
             _state.UnlockUntilUnix = new DateTimeOffset(until).ToUnixTimeSeconds();
+            _state.ForcedLock = false;            // Fern-Entsperren hebt auch die Sofortsperre auf
             _state.PenaltySecondsRemaining = 0;   // Eltern entsperren -> Auszeit ist mit erledigt
             _state.PenaltyCount = 0;
             _state.PenaltyTotalMinutes = 0;

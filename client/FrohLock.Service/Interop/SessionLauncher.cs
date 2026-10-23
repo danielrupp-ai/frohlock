@@ -14,12 +14,29 @@ public static class SessionLauncher
 {
     public static uint ActiveConsoleSessionId => WTSGetActiveConsoleSessionId();
 
-    /// <summary>True, wenn aktuell ein Benutzer interaktiv angemeldet ist.</summary>
+    /// <summary>
+    /// True, wenn an der Konsole wirklich ein Benutzer angemeldet ist (nicht nur der Anmeldebildschirm):
+    /// nur dann liefert Windows ein Benutzer-Token für die Sitzung.
+    /// </summary>
     public static bool HasActiveUserSession()
     {
         var id = WTSGetActiveConsoleSessionId();
-        return id != 0xFFFFFFFF;
+        if (id == 0xFFFFFFFF) return false;
+        if (!WTSQueryUserToken(id, out IntPtr token)) return false;
+        CloseHandle(token);
+        return true;
     }
+
+    /// <summary>Trennt die Konsolen-Sitzung -> Windows zeigt den Anmeldebildschirm (Programme laufen weiter).</summary>
+    public static bool DisconnectActiveSession()
+    {
+        var id = WTSGetActiveConsoleSessionId();
+        if (id == 0xFFFFFFFF) return false;
+        return WTSDisconnectSession(IntPtr.Zero, (int)id, false);
+    }
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSDisconnectSession(IntPtr hServer, int sessionId, bool bWait);
 
     public static bool TryLaunchInActiveSession(string exePath, string arguments = "")
     {

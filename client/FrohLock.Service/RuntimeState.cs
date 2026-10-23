@@ -12,6 +12,8 @@ public sealed class RuntimeState
     public long ConfigVersion { get; set; }
     public long UnlockUntilUnix { get; set; }   // aktive Entsperrung (Vertrauenszeit), 0 = keine
     public long MasterUnlockUntilUnix { get; set; }  // Master-PIN-Override (überschreibt ALLES), 0 = keine
+    /// <summary>„Sofort sperren" der Eltern: gilt, bis Eltern-PIN, Fern-Entsperren oder Master-PIN freigeben.</summary>
+    public bool ForcedLock { get; set; }
     public int PinFailuresToday { get; set; }
     public string PinFailureDay { get; set; } = ""; // yyyy-MM-dd zur Tagesrückstellung
     public long LastBootUnix { get; set; }

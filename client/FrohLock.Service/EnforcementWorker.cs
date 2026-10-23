@@ -460,19 +460,84 @@ public sealed class EnforcementWorker : BackgroundService
         catch (Exception ex) { _audit.Write("UNINSTALL", $"Fehler: {ex.Message}"); }
     }
 
-    /// <summary>Startet den Overlay-Agent nach, wenn ein Nutzer angemeldet ist, aber kein Lebenszeichen kommt.</summary>
+    private DateTime _lastAgentLaunchUtc = DateTime.MinValue;
+    private readonly Queue<DateTime> _agentLaunches = new();
+    private DateTime _lastOverlayAlertUtc = DateTime.MinValue;
+    private DateTime _lastDisconnectUtc = DateTime.MinValue;
+    private long _sessionSinceAwake100ns;
+
+    /// <summary>
+    /// Hält den Sperrbildschirm (Overlay-Agent) am Leben:
+    /// schweigt er, wird ein hängender Rest beendet und neu gestartet; startet er dauerhaft nicht
+    /// (abgestürzt oder ständig beendet), gibt es eine Warnung für die Eltern – und ist der Laptop
+    /// gerade gesperrt, wird die Windows-Sitzung getrennt (Anmeldebildschirm), damit die Sperre greift.
+    /// </summary>
     private void WatchdogAgent()
     {
         try
         {
-            if (!SessionLauncher.HasActiveUserSession()) return;
-            if (_controller.AgentSilence < TimeSpan.FromSeconds(45)) return;
+            if (!SessionLauncher.HasActiveUserSession()) { _sessionSinceAwake100ns = 0; return; }
+            if (_sessionSinceAwake100ns == 0) _sessionSinceAwake100ns = AwakeClock.Now100ns;
+            var silence = _controller.AgentSilence;
+            if (silence < TimeSpan.FromSeconds(45)) return;
+            var now = DateTime.UtcNow;
+
+            // Sicherheitsnetz: gesperrt, aber kein Sperrbildschirm -> Sitzung trennen.
+            // Nach dem Anmelden erst 2 Min Schonfrist (Autostart des Overlays kann dauern).
+            bool sessionSettled = AwakeClock.SecondsSince(_sessionSinceAwake100ns) > 120;
+            if (silence > TimeSpan.FromSeconds(90) && sessionSettled && _controller.Decide().IsLocked
+                && (now - _lastDisconnectUtc) > TimeSpan.FromSeconds(60))
+            {
+                _lastDisconnectUtc = now;
+                bool ok = SessionLauncher.DisconnectActiveSession();
+                _audit.Write("OVERLAY", ok
+                    ? "⚠ Gesperrt, aber Sperrbildschirm fehlte – Windows-Sitzung getrennt (Anmeldebildschirm)"
+                    : "⚠ Gesperrt, aber Sperrbildschirm fehlte – Trennen der Sitzung fehlgeschlagen");
+                return;
+            }
+
+            // Frisch gestarteten Agent erst hochfahren lassen.
+            if ((now - _lastAgentLaunchUtc) < TimeSpan.FromSeconds(30)) return;
 
             var agentPath = Path.Combine(AppPaths.InstallDir, "FrohLockAgent.exe");
             if (!File.Exists(agentPath)) return;
-            bool ok = SessionLauncher.TryLaunchInActiveSession(agentPath);
-            _audit.Write("WATCHDOG", ok ? "Agent nachgestartet" : "Agent-Nachstart fehlgeschlagen");
+
+            // Hängender Agent hält die Ein-Instanz-Sperre -> jeder Neustart beendet sich sofort wieder.
+            int killed = KillAgentsInActiveSession();
+            if (killed > 0) _audit.Write("WATCHDOG", $"Sperrbildschirm reagierte nicht – {killed} Prozess(e) beendet");
+
+            bool launched = SessionLauncher.TryLaunchInActiveSession(agentPath);
+            _lastAgentLaunchUtc = now;
+            _audit.Write("WATCHDOG", launched ? "Agent nachgestartet" : "Agent-Nachstart fehlgeschlagen");
+
+            _agentLaunches.Enqueue(now);
+            while (_agentLaunches.Count > 0 && now - _agentLaunches.Peek() > TimeSpan.FromMinutes(10)) _agentLaunches.Dequeue();
+            if (_agentLaunches.Count >= 5 && (now - _lastOverlayAlertUtc) > TimeSpan.FromMinutes(30))
+            {
+                _lastOverlayAlertUtc = now;
+                _audit.Write("OVERLAY", $"⚠ Sperrbildschirm lief nicht ({_agentLaunches.Count} Neustarts in 10 Min) – " +
+                    "abgestürzt oder wird beendet; Bildschirmzeit wird trotzdem gezählt");
+            }
         }
         catch (Exception ex) { _log.LogDebug(ex, "Watchdog Fehler"); }
+    }
+
+    private static int KillAgentsInActiveSession()
+    {
+        int killed = 0;
+        uint session = SessionLauncher.ActiveConsoleSessionId;
+        foreach (var p in System.Diagnostics.Process.GetProcessesByName("FrohLockAgent"))
+        {
+            try
+            {
+                if (p.SessionId != session) continue;
+                p.Kill();
+                p.WaitForExit(3000);
+                killed++;
+            }
+            catch { }
+            finally { p.Dispose(); }
+        }
+        return killed;
     }
 }

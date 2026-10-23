@@ -138,6 +138,9 @@ public sealed class IpcServer : BackgroundService
                 _onAgentAlive();
                 _controller.ResolvePendingGaps();
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
+            case IpcKind.AgentCrashReport:
+                _controller.ReportAgentCrash(msg.Reason);
+                return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
             case IpcKind.RequestLock:
                 _controller.ForceLock(msg.Reason);
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = true };

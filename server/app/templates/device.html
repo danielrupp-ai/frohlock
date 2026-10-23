@@ -35,9 +35,10 @@
 
 {% if gap_alerts %}
 <div class="card" style="border:2px solid #ff5252">
-  <h2>⚠ FrohLock hat zeitweise nicht gezählt</h2>
-  <p class="muted" style="margin:0 0 10px">Der Laptop war wach, aber der Schutzdienst lief nicht (hing, angehalten oder beendet).
-    War der Bildschirm in der Zeit an, wurde die Zeit nachgezählt. Häufen sich diese Meldungen, sollte das Konto des Kindes ein
+  <h2>⚠ Auffälligkeiten am Gerät</h2>
+  <p class="muted" style="margin:0 0 10px">Hier steht, wenn FrohLock zeitweise nicht gezählt hat (Laptop wach, Schutzdienst lief nicht)
+    oder der Sperrbildschirm fehlte (abgestürzt oder beendet). Fehlende Zeit wird nachgezählt; fehlt der Sperrbildschirm während
+    einer Sperre, trennt FrohLock die Windows-Sitzung. Häufen sich diese Meldungen, sollte das Konto des Kindes ein
     <b>Standardkonto</b> sein (kein Administrator).</p>
   <ul style="margin:0;padding-left:18px">
     {% for a in gap_alerts %}<li style="margin:4px 0"><b>{{ a.when }}</b> – {{ a.msg }}</li>{% endfor %}
@@ -198,6 +199,8 @@
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
         <input type="hidden" name="kind" value="lock"><button class="secondary" type="submit">Sofort sperren</button>
       </form>
+      <p class="muted" style="flex-basis:100%;margin:4px 0 0">„Sofort sperren" gilt ab Version 0.23 sofort und bleibt bestehen,
+        bis Sie „Entsperren" tippen oder am Laptop den Eltern-PIN eingeben.</p>
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
         <input type="hidden" name="kind" value="update"><button class="secondary" type="submit">Update</button>
       </form>

@@ -14,7 +14,8 @@ public enum IpcKind
     SubmitPin,        // Agent -> Dienst: PIN-Versuch (nur zur Prüfung, nie gespeichert im Agent)
     PinResult,        // Dienst -> Agent
     AgentAlive,       // Agent -> Dienst: Heartbeat (Watchdog)
-    RequestLock       // Agent -> Dienst: erzwinge Sperre (z. B. Overlay ausgehebelt)
+    RequestLock,      // Agent -> Dienst: erzwinge Sperre (z. B. Overlay ausgehebelt)
+    AgentCrashReport  // Agent -> Dienst: letzter Absturz des Overlays (Reason = Fehlertext), fürs Protokoll
 }
 
 public sealed class IpcMessage
