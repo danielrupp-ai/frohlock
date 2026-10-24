@@ -129,7 +129,9 @@ public partial class App : Application
             if (ScreenOnNow() && !(_lock?.IsVisible ?? false))
                 ScreenLedger.Mark(_screenLedger, DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60);
             var ledgerCopy = _screenLedger.Select(r => new MinuteRange { Start = r.Start, End = r.End }).ToList();
-            await _ipc.AliveAsync(_screen.DisplayOn, _screen.LidOpen, _screen.ExternalDisplay, _screen.SessionLocked, ledgerCopy);
+            bool visible = _lock?.IsVisible ?? false;
+            await _ipc.AliveAsync(_screen.DisplayOn, _screen.LidOpen, _screen.ExternalDisplay, _screen.SessionLocked, ledgerCopy,
+                lockVisible: visible, foregroundOurs: visible && (_lock?.HasForeground() ?? false));
         }
         catch { }
     }

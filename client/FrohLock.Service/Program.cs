@@ -35,7 +35,7 @@ builder.Services.AddSingleton(sp => new EnforcementController(
 builder.Services.AddSingleton<IHostedService>(sp => new IpcServer(
     sp.GetRequiredService<EnforcementController>(),
     sp.GetRequiredService<ILogger<IpcServer>>(),
-    () => sp.GetRequiredService<EnforcementController>().MarkAgentAlive()));
+    () => { }));
 
 // Haupt-Worker.
 builder.Services.AddSingleton<IHostedService>(sp => new EnforcementWorker(

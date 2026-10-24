@@ -283,6 +283,12 @@ public partial class LockWindow : Window
     private readonly BypassEscalation _escalation = new();
     private readonly System.Diagnostics.Stopwatch _guardClock = System.Diagnostics.Stopwatch.StartNew();
 
+    /// <summary>Hat der Sperrbildschirm gerade den Windows-Vordergrund (Tastatur)?</summary>
+    public bool HasForeground()
+    {
+        try { return ScreenCover.IsForeground(new WindowInteropHelper(this).Handle); } catch { return false; }
+    }
+
     /// <summary>Beim Einblenden neu anfangen zu zählen.</summary>
     public void ResetGuard() => _escalation.Step(_guardClock.Elapsed.TotalSeconds + BypassEscalation.WindowSeconds + 1, false);
 

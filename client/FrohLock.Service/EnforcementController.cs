@@ -35,7 +35,48 @@ public sealed class EnforcementController
     public const int MaxPinFailuresBeforeLockout = 8;
 
     /// <summary>Watchdog: Zeitpunkt des letzten Agent-Lebenszeichens.</summary>
-    public void MarkAgentAlive() { lock (_gate) { _lastAgentAliveUtc = DateTime.UtcNow; _lastAgentAliveAwake100ns = Interop.AwakeClock.Now100ns; } }
+    public void MarkAgentAlive() => MarkAgentAlive(-1, false, false);
+
+    private readonly Dictionary<int, long> _aliveBySession = new();
+    private DateTime _lastSessionMismatchUtc = DateTime.MinValue;
+    private DateTime _lastHiddenLockUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// Lebenszeichen des Sperrbildschirms. Zählt nur, wenn es aus der AKTIVEN Konsolen-Sitzung kommt:
+    /// ein Sperrbildschirm in einer anderen (z. B. per „Benutzer wechseln" verlassenen) Sitzung
+    /// darf den Wächter nicht beruhigen – dort sitzt niemand, und in der aktiven Sitzung fehlt er.
+    /// </summary>
+    public void MarkAgentAlive(int sessionId, bool lockVisible, bool foregroundOurs)
+    {
+        uint active = Interop.SessionLauncher.ActiveConsoleSessionId;
+        bool fromActive = sessionId < 0 || active == 0xFFFFFFFF || (uint)sessionId == active;
+        bool locked;
+        lock (_gate)
+        {
+            if (sessionId >= 0) _aliveBySession[sessionId] = Interop.AwakeClock.Now100ns;
+            if (fromActive)
+            {
+                _lastAgentAliveUtc = DateTime.UtcNow;
+                _lastAgentAliveAwake100ns = Interop.AwakeClock.Now100ns;
+            }
+            locked = DecideLocked();
+        }
+        var now = DateTime.UtcNow;
+        if (!fromActive && Interop.SessionLauncher.HasActiveUserSession() && now - _lastSessionMismatchUtc > TimeSpan.FromMinutes(5))
+        {
+            _lastSessionMismatchUtc = now;
+            _audit.Write("UMGEHUNG", $"⚠ Sperrbildschirm meldet sich aus Sitzung {sessionId}, aktiv ist Sitzung {active}"
+                + $" (Konto „{Interop.SessionLauncher.UserNameOfSession(active)}“) – anderes Benutzerkonto? Dort wird er nachgestartet");
+        }
+        if (fromActive && locked && (!lockVisible || !foregroundOurs) && now - _lastHiddenLockUtc > TimeSpan.FromMinutes(2))
+        {
+            _lastHiddenLockUtc = now;
+            _audit.Write("UMGEHUNG", "⚠ Gesperrt, aber Sperrbildschirm "
+                + (!lockVisible ? "nicht eingeblendet" : "ohne Vordergrund (Tastatur woanders)") + $" (Sitzung {sessionId})");
+        }
+    }
+
+    private bool DecideLocked() { try { return Decide().IsLocked; } catch { return false; } }
 
     /// <summary>
     /// Wie lange schweigt der Agent – gemessen in WACHER Zeit (Schlaf zählt nicht), damit nach dem

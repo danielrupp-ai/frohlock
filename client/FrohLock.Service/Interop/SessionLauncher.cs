@@ -38,6 +38,25 @@ public static class SessionLauncher
     [DllImport("wtsapi32.dll", SetLastError = true)]
     private static extern bool WTSDisconnectSession(IntPtr hServer, int sessionId, bool bWait);
 
+    /// <summary>Anmeldename der Sitzung (fürs Protokoll: welches Konto ist gerade aktiv?).</summary>
+    public static string UserNameOfSession(uint sessionId)
+    {
+        try
+        {
+            if (WTSQuerySessionInformation(IntPtr.Zero, (int)sessionId, 5 /* WTSUserName */, out IntPtr buf, out _))
+            {
+                try { return Marshal.PtrToStringUni(buf) ?? "?"; } finally { WTSFreeMemory(buf); }
+            }
+        }
+        catch { }
+        return "?";
+    }
+
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool WTSQuerySessionInformation(IntPtr hServer, int sessionId, int infoClass, out IntPtr buffer, out uint bytes);
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr memory);
+
     public static bool TryLaunchInActiveSession(string exePath, string arguments = "")
     {
         uint sessionId = WTSGetActiveConsoleSessionId();

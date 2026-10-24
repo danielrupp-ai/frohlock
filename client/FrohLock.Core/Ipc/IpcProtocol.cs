@@ -55,6 +55,11 @@ public sealed class IpcMessage
     /// <summary>Eigene Aufzeichnung des Overlays: wann war der Bildschirm an (letzte 24 h)? Für das Nachzählen.</summary>
     public List<MinuteRange>? ScreenOnMinutes { get; set; }
     public bool SessionLocked { get; set; }
+    /// <summary>Windows-Sitzung, in der der Sperrbildschirm läuft (Agent -> Dienst). Nur die AKTIVE Sitzung zählt als Lebenszeichen.</summary>
+    public int SessionId { get; set; } = -1;
+    /// <summary>Ist der Sperrbildschirm gerade eingeblendet und hat er den Vordergrund?</summary>
+    public bool LockVisible { get; set; }
+    public bool ForegroundOurs { get; set; }
 
     /// <summary>Mit BypassReport: true = Warnung für die Eltern (⚠), false = reine Diagnose.</summary>
     public bool Alert { get; set; }

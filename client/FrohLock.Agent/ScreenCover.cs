@@ -139,6 +139,8 @@ internal static class ScreenCover
         return new[] { (cx, cy), (l, t), (r, t), (l, b), (r, b), (cx, t), (cx, b), (l, cy), (r, cy) };
     }
 
+    public static bool IsForeground(IntPtr hwnd) => hwnd != IntPtr.Zero && GetForegroundWindow() == hwnd;
+
     /// <summary>Fremdes Fenster aus dem Weg: minimieren (nicht beenden). Windows-Oberfläche bleibt unangetastet.</summary>
     public static bool Minimize(ForeignWindow w)
     {

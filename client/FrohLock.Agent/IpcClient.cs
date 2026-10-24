@@ -36,10 +36,18 @@ public sealed class IpcClient
         => SendAsync(new IpcMessage { Kind = IpcKind.SubmitPin, Pin = pin }, ct: ct);
 
     public Task<IpcMessage?> AliveAsync(bool displayOn, bool lidOpen, bool externalDisplay, bool sessionLocked,
-        List<FrohLock.Core.Schedule.MinuteRange>? screenOnMinutes = null, CancellationToken ct = default)
+        List<FrohLock.Core.Schedule.MinuteRange>? screenOnMinutes = null, bool lockVisible = false,
+        bool foregroundOurs = false, CancellationToken ct = default)
         => SendAsync(new IpcMessage
         {
             Kind = IpcKind.AgentAlive, DisplayOn = displayOn, LidOpen = lidOpen,
-            ExternalDisplay = externalDisplay, SessionLocked = sessionLocked, ScreenOnMinutes = screenOnMinutes
+            ExternalDisplay = externalDisplay, SessionLocked = sessionLocked, ScreenOnMinutes = screenOnMinutes,
+            SessionId = SessionIdOfThisProcess, LockVisible = lockVisible, ForegroundOurs = foregroundOurs
         }, ct: ct);
+
+    private static readonly int SessionIdOfThisProcess = SafeSessionId();
+    private static int SafeSessionId()
+    {
+        try { using var p = System.Diagnostics.Process.GetCurrentProcess(); return p.SessionId; } catch { return -1; }
+    }
 }

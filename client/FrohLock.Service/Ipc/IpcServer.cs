@@ -135,7 +135,7 @@ public sealed class IpcServer : BackgroundService
             case IpcKind.AgentAlive:
                 _controller.SetScreenState(msg.DisplayOn, msg.LidOpen, msg.ExternalDisplay, msg.SessionLocked,
                     msg.ScreenOnMinutes);
-                _onAgentAlive();
+                _controller.MarkAgentAlive(msg.SessionId, msg.LockVisible, msg.ForegroundOurs);
                 _controller.ResolvePendingGaps();
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
             case IpcKind.AgentCrashReport:
