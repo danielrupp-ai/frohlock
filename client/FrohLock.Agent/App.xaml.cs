@@ -82,6 +82,11 @@ public partial class App : Application
             return;
         }
 
+        // Sitzung 0 ist die unsichtbare Dienst-Sitzung: dort startet uns der Installer nach einem stillen
+        // Fern-Update. Ein Sperrbildschirm ohne Bildschirm nützt nichts und hat (bis 0.25.0) den Wächter
+        // beruhigt, während in der echten Sitzung keiner lief -> sofort beenden, der Dienst startet uns dort.
+        if (SessionIdOfThisProcess() == 0) { Shutdown(); return; }
+
         _singleInstance = new Mutex(true, "Local\\FrohLock.Agent.SingleInstance", out bool created);
         if (!created) { Shutdown(); return; }
 
@@ -251,6 +256,11 @@ public partial class App : Application
         {
             Kind = FrohLock.Core.Ipc.IpcKind.BypassReport, Reason = text, Alert = true, Escalate = escalate
         });
+    }
+
+    private static int SessionIdOfThisProcess()
+    {
+        try { using var p = System.Diagnostics.Process.GetCurrentProcess(); return p.SessionId; } catch { return -1; }
     }
 
     private static bool ServiceInstalled()

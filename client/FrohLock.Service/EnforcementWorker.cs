@@ -464,6 +464,7 @@ public sealed class EnforcementWorker : BackgroundService
     private readonly Queue<DateTime> _agentLaunches = new();
     private DateTime _lastOverlayAlertUtc = DateTime.MinValue;
     private DateTime _lastDisconnectUtc = DateTime.MinValue;
+    private int _launchesSinceAlive;
     private long _sessionSinceAwake100ns;
 
     /// <summary>
@@ -479,16 +480,18 @@ public sealed class EnforcementWorker : BackgroundService
             if (!SessionLauncher.HasActiveUserSession()) { _sessionSinceAwake100ns = 0; return; }
             if (_sessionSinceAwake100ns == 0) _sessionSinceAwake100ns = AwakeClock.Now100ns;
             var silence = _controller.AgentSilence;
-            if (silence < TimeSpan.FromSeconds(45)) return;
+            if (silence < TimeSpan.FromSeconds(45)) { _launchesSinceAlive = 0; return; }
             var now = DateTime.UtcNow;
 
-            // Sicherheitsnetz: gesperrt, aber kein Sperrbildschirm -> Sitzung trennen.
-            // Nach dem Anmelden erst 2 Min Schonfrist (Autostart des Overlays kann dauern).
+            // Sicherheitsnetz: gesperrt, aber der Sperrbildschirm kommt trotz Nachstarts nicht ->
+            // Sitzung trennen. Erst NACH mindestens zwei vergeblichen Starts (vorher wurde hier getrennt,
+            // bevor überhaupt ein Nachstart versucht war). Nach dem Anmelden 2 Min Schonfrist.
             bool sessionSettled = AwakeClock.SecondsSince(_sessionSinceAwake100ns) > 120;
-            if (silence > TimeSpan.FromSeconds(90) && sessionSettled && _controller.Decide().IsLocked
-                && (now - _lastDisconnectUtc) > TimeSpan.FromSeconds(60))
+            if (silence > TimeSpan.FromSeconds(90) && sessionSettled && _launchesSinceAlive >= 2
+                && _controller.Decide().IsLocked && (now - _lastDisconnectUtc) > TimeSpan.FromSeconds(60))
             {
                 _lastDisconnectUtc = now;
+                _launchesSinceAlive = 0;
                 bool ok = SessionLauncher.DisconnectActiveSession();
                 _audit.Write("OVERLAY", ok
                     ? "⚠ Gesperrt, aber Sperrbildschirm fehlte – Windows-Sitzung getrennt (Anmeldebildschirm)"
@@ -508,6 +511,7 @@ public sealed class EnforcementWorker : BackgroundService
 
             bool launched = SessionLauncher.TryLaunchInActiveSession(agentPath);
             _lastAgentLaunchUtc = now;
+            _launchesSinceAlive++;
             _audit.Write("WATCHDOG", launched ? "Agent nachgestartet" : "Agent-Nachstart fehlgeschlagen");
 
             _agentLaunches.Enqueue(now);

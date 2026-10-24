@@ -65,8 +65,11 @@ public sealed class EnforcementController
         if (!fromActive && Interop.SessionLauncher.HasActiveUserSession() && now - _lastSessionMismatchUtc > TimeSpan.FromMinutes(5))
         {
             _lastSessionMismatchUtc = now;
-            _audit.Write("UMGEHUNG", $"⚠ Sperrbildschirm meldet sich aus Sitzung {sessionId}, aktiv ist Sitzung {active}"
-                + $" (Konto „{Interop.SessionLauncher.UserNameOfSession(active)}“) – anderes Benutzerkonto? Dort wird er nachgestartet");
+            _audit.Write("UMGEHUNG", sessionId == 0
+                ? $"⚠ Sperrbildschirm lief nur in der unsichtbaren Dienst-Sitzung 0 (Rest eines stillen Updates), aktiv ist Sitzung {active}"
+                  + $" (Konto „{Interop.SessionLauncher.UserNameOfSession(active)}“) – wird dort nachgestartet"
+                : $"⚠ Sperrbildschirm meldet sich aus Sitzung {sessionId}, aktiv ist Sitzung {active}"
+                  + $" (Konto „{Interop.SessionLauncher.UserNameOfSession(active)}“) – anderes Benutzerkonto? Dort wird er nachgestartet");
         }
         if (fromActive && locked && (!lockVisible || !foregroundOurs) && now - _lastHiddenLockUtc > TimeSpan.FromMinutes(2))
         {
@@ -211,7 +214,9 @@ public sealed class EnforcementController
 
     public EnforcementController(ITrustedClock clock, AuditLog audit, RuntimeState state)
     {
-        _lastAgentAliveAwake100ns = Interop.AwakeClock.Now100ns; // Schonfrist ab Dienststart
+        // Kurze Schonfrist ab Dienststart (~10 s): nach einem Update fehlt der Sperrbildschirm in der
+        // Sitzung des Kindes, der Wächter soll ihn sofort nachstarten statt 45 s zu warten.
+        _lastAgentAliveAwake100ns = Interop.AwakeClock.Now100ns - 35L * 10_000_000L;
         _clock = clock;
         _audit = audit;
         _state = state;
