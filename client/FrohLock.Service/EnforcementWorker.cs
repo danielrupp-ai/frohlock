@@ -416,14 +416,49 @@ public sealed class EnforcementWorker : BackgroundService
         }
     }
 
-    private int _updateRunning;
+    private CancellationTokenSource? _updateCts;
+    private DateTime _updateStartedUtc = DateTime.MinValue;
+    private DateTime _lastUpdateBusyAuditUtc = DateTime.MinValue;
+    private static readonly TimeSpan UpdateDeadline = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// Update höchstens einmal gleichzeitig – aber mit eigener Frist. Vorher hielt ein Download, der beim
+    /// Zuklappen/Schlafen hängen blieb, die Sperre für immer (die Netz-Runde gab nur auf, brach ihn aber
+    /// nicht ab): Danyil 24.10. – 2 Stunden „Ausführen: Update" alle 30 s, nie ein Download.
+    /// </summary>
     private async Task TryUpdateAsync(PollContext ctx, ServerClient client, CancellationToken ct)
     {
-        // Ein großer Download kann länger als eine Netz-Runde dauern – dann nicht parallel ein zweites Mal starten.
-        if (Interlocked.Exchange(ref _updateRunning, 1) == 1) return;
-        try { await TryUpdateCoreAsync(ctx, client, ct).ConfigureAwait(false); }
-        finally { Volatile.Write(ref _updateRunning, 0); }
+        CancellationTokenSource cts;
+        lock (_audit)
+        {
+            if (_updateCts is not null)
+            {
+                var age = DateTime.UtcNow - _updateStartedUtc;
+                if (age < UpdateDeadline + TimeSpan.FromMinutes(1))
+                {
+                    if ((DateTime.UtcNow - _lastUpdateBusyAuditUtc) > TimeSpan.FromMinutes(5))
+                    {
+                        _lastUpdateBusyAuditUtc = DateTime.UtcNow;
+                        _audit.Write("UPDATE", $"Download läuft noch (seit {(int)age.TotalMinutes} Min) – kein zweiter Start");
+                    }
+                    return;
+                }
+                _audit.Write("UPDATE", $"⚠ Hängenden Download nach {(int)age.TotalMinutes} Min abgebrochen – neuer Versuch");
+                try { _updateCts.Cancel(); } catch { }
+            }
+            cts = _updateCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(UpdateDeadline);
+            _updateStartedUtc = DateTime.UtcNow;
+        }
+        try { await TryUpdateCoreAsync(ctx, client, cts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { _audit.Write("UPDATE", "Fehler: Zeitlimit beim Herunterladen – nächster Versuch beim nächsten Abruf"); }
+        catch (Exception ex) { _audit.Write("UPDATE", $"Fehler: {ex.Message}"); }
+        finally
+        {
+            lock (_audit) { if (ReferenceEquals(_updateCts, cts)) _updateCts = null; }
+            cts.Dispose();
+        }
     }
 
     private async Task TryUpdateCoreAsync(PollContext ctx, ServerClient client, CancellationToken ct)

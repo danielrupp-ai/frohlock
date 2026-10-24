@@ -57,7 +57,8 @@ public sealed class Updater
             {
                 resp.EnsureSuccessStatusCode();
                 await using var fs = File.Create(tmp);
-                await resp.Content.CopyToAsync(fs, ct).ConfigureAwait(false);
+                await using var body = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                await CopyWithInactivityTimeoutAsync(body, fs, TimeSpan.FromSeconds(60), ct).ConfigureAwait(false);
             }
 
             var actual = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(tmp, ct).ConfigureAwait(false)))
@@ -85,6 +86,26 @@ public sealed class Updater
             _audit.Write("UPDATE", $"Fehler: {ex.Message}");
             TryDelete(tmp);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Kopiert blockweise; kommen 60 s lang keine Bytes (Schlaf, totes WLAN, halb offene Verbindung),
+    /// wird abgebrochen statt ewig zu warten. HttpClient.Timeout gilt bei ResponseHeadersRead NICHT für den Inhalt.
+    /// </summary>
+    private static async Task CopyWithInactivityTimeoutAsync(Stream from, Stream to, TimeSpan idle, CancellationToken ct)
+    {
+        var buf = new byte[1 << 16];
+        while (true)
+        {
+            using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            readCts.CancelAfter(idle);
+            int n;
+            try { n = await from.ReadAsync(buf, readCts.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            { throw new TimeoutException("Download stockt (60 s keine Daten)"); }
+            if (n == 0) break;
+            await to.WriteAsync(buf.AsMemory(0, n), ct).ConfigureAwait(false);
         }
     }
 
