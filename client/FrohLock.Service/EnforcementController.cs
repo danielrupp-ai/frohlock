@@ -443,6 +443,19 @@ public sealed class EnforcementController
         if (clean.Length > 0) _audit.Write("OVERLAY", $"⚠ Sperrbildschirm war abgestürzt: {clean}");
     }
 
+    /// <summary>
+    /// Sperrbildschirm deckte nicht alles ab (falsche Fläche, minimiert, unsichtbar) – ins Geräte-Protokoll,
+    /// damit die Eltern im Admin sehen, WIE die Sperre ausgehebelt war. Text kommt aus dem Nutzerprozess.
+    /// </summary>
+    public void ReportCoverageProblem(string text, bool alert)
+    {
+        var clean = (text ?? "").Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ').Trim();
+        if (clean.Length > 300) clean = clean[..300];
+        if (clean.Length == 0) return;
+        bool locked = Decide().IsLocked;
+        _audit.Write("UMGEHUNG", (alert ? "⚠ " : "") + clean + (locked ? " (während Sperre)" : ""));
+    }
+
     /// <summary>Sofort sperren (Fern-Befehl oder Overlay-Manipulation erkannt).</summary>
     public void ForceLock(string reason)
     {
@@ -500,7 +513,7 @@ public sealed class EnforcementController
                 PenaltyTotalMinutes = _state.PenaltyTotalMinutes,
                 AgentAliveAgeSeconds = _lastAgentAliveUtc == DateTime.MinValue
                     ? -1 : (int)(DateTime.UtcNow - _lastAgentAliveUtc).TotalSeconds,
-                RecentAudit = string.Join("\n", _audit.Tail(25))
+                RecentAudit = string.Join("\n", _audit.Tail(40))
             };
         }
     }

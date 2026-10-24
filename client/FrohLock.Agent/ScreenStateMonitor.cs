@@ -34,6 +34,9 @@ public sealed class ScreenStateMonitor : IDisposable
     /// <summary>Wird bei jeder Zustandsänderung ausgelöst (UI-Thread).</summary>
     public event Action? Changed;
 
+    /// <summary>Monitore/Auflösung haben sich geändert (WM_DISPLAYCHANGE) – Sperrfläche nachziehen.</summary>
+    public event Action? DisplayLayoutChanged;
+
     public void Start()
     {
         try
@@ -98,7 +101,10 @@ public sealed class ScreenStateMonitor : IDisposable
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WM_DISPLAYCHANGE)
+        {
             RefreshExternalDisplay();
+            try { DisplayLayoutChanged?.Invoke(); } catch { }
+        }
         else if (msg == WM_POWERBROADCAST && wParam.ToInt32() == PBT_POWERSETTINGCHANGE && lParam != IntPtr.Zero)
         {
             try

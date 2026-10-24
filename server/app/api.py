@@ -104,7 +104,7 @@ def _remember_gap_alerts(c, device_id: str, recent_audit: str) -> None:
     """⚠-Lücken („FrohLock stand still, obwohl der Laptop wach war") dauerhaft merken –
     das Geräte-Protokoll zeigt nur die letzten Zeilen, die Warnung darf nicht wegrollen."""
     lines = [ln.strip() for ln in (recent_audit or "").splitlines()
-             if ("\tLUECKE\t" in ln or "\tOVERLAY\t" in ln) and "⚠" in ln]
+             if ("\tLUECKE\t" in ln or "\tOVERLAY\t" in ln or "\tUMGEHUNG\t" in ln) and "⚠" in ln]
     if not lines:
         return
     row = c.execute("SELECT gap_alerts FROM devices WHERE id=?", (device_id,)).fetchone()

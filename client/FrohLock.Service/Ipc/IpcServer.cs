@@ -141,6 +141,9 @@ public sealed class IpcServer : BackgroundService
             case IpcKind.AgentCrashReport:
                 _controller.ReportAgentCrash(msg.Reason);
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
+            case IpcKind.BypassReport:
+                _controller.ReportCoverageProblem(msg.Reason, msg.Alert);
+                return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
             case IpcKind.RequestLock:
                 _controller.ForceLock(msg.Reason);
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = true };

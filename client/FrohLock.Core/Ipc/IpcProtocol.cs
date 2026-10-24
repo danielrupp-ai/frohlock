@@ -15,7 +15,8 @@ public enum IpcKind
     PinResult,        // Dienst -> Agent
     AgentAlive,       // Agent -> Dienst: Heartbeat (Watchdog)
     RequestLock,      // Agent -> Dienst: erzwinge Sperre (z. B. Overlay ausgehebelt)
-    AgentCrashReport  // Agent -> Dienst: letzter Absturz des Overlays (Reason = Fehlertext), fürs Protokoll
+    AgentCrashReport, // Agent -> Dienst: letzter Absturz des Overlays (Reason = Fehlertext), fürs Protokoll
+    BypassReport      // Agent -> Dienst: Sperrbildschirm deckte nicht alles ab (Reason = Befund), fürs Protokoll
 }
 
 public sealed class IpcMessage
@@ -54,4 +55,7 @@ public sealed class IpcMessage
     /// <summary>Eigene Aufzeichnung des Overlays: wann war der Bildschirm an (letzte 24 h)? Für das Nachzählen.</summary>
     public List<MinuteRange>? ScreenOnMinutes { get; set; }
     public bool SessionLocked { get; set; }
+
+    /// <summary>Mit BypassReport: true = Warnung für die Eltern (⚠), false = reine Diagnose.</summary>
+    public bool Alert { get; set; }
 }

@@ -2,7 +2,7 @@
 ; Wird von der CI mit iscc kompiliert. Payload liegt unter installer\payload\.
 
 #ifndef AppVersion
-  #define AppVersion "0.23.0"
+  #define AppVersion "0.24.0"
 #endif
 
 #define AppName "FrohLock"

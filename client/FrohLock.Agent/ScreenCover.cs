@@ -1,0 +1,105 @@
+using System.Runtime.InteropServices;
+using FrohLock.Core.Schedule;
+
+namespace FrohLock.Agent;
+
+/// <summary>
+/// Legt den Sperrbildschirm in echten Pixeln über alle aktuellen Monitore und prüft die Lage
+/// des eigenen Fensters. Der Agent ist Per-Monitor-DPI-aware (v2) – alle Werte hier sind Pixel.
+/// </summary>
+internal static class ScreenCover
+{
+    /// <summary>
+    /// Zieht das Fenster auf die volle Fläche aller Monitore nach.
+    /// Gibt einen Befund zurück, wenn es vorher NICHT alles abgedeckt hat (sonst null).
+    /// </summary>
+    public static string? Ensure(IntPtr hwnd)
+    {
+        var monitors = Monitors();
+        var virt = new PixelRect(
+            GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN) + GetSystemMetrics(SM_CYVIRTUALSCREEN));
+        if (virt.IsEmpty) return null;
+
+        GetWindowRect(hwnd, out var r);
+        var current = new PixelRect(r.Left, r.Top, r.Right, r.Bottom);
+        bool iconic = IsIconic(hwnd);
+        var uncovered = CoverageRules.UncoveredMonitors(monitors, current);
+        if (uncovered.Count == 0 && !iconic)
+        {
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            return null;
+        }
+
+        if (iconic) ShowWindow(hwnd, SW_RESTORE);
+        SetWindowPos(hwnd, HWND_TOPMOST, virt.Left, virt.Top, virt.Width, virt.Height,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW);
+
+        return (iconic ? "Sperrbildschirm war minimiert" : "Sperrbildschirm deckte nicht alles ab")
+               + $" – Fenster {current}, Monitore {string.Join(" + ", monitors)}, frei: {string.Join(" + ", uncovered)}"
+               + " – korrigiert";
+    }
+
+    /// <summary>Ist das eigene Fenster von Windows ausgeblendet (z. B. anderer virtueller Desktop)?</summary>
+    public static bool IsCloaked(IntPtr hwnd)
+    {
+        try
+        {
+            return DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Werkzeugfenster: kein Taskleisten-/Alt+Tab-Eintrag, sichtbar auf allen virtuellen Desktops.</summary>
+    public static void MakeToolWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        long ex = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+        ex = (ex | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW;
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(ex));
+    }
+
+    private static List<PixelRect> Monitors()
+    {
+        var list = new List<PixelRect>();
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMon, IntPtr _, ref RECT _, IntPtr _) =>
+        {
+            var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (GetMonitorInfo(hMon, ref mi))
+                list.Add(new PixelRect(mi.rcMonitor.Left, mi.rcMonitor.Top, mi.rcMonitor.Right, mi.rcMonitor.Bottom));
+            return true;
+        }, IntPtr.Zero);
+        return list;
+    }
+
+    private const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79;
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
+    private const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
+    private const int SW_RESTORE = 9;
+    private const int GWL_EXSTYLE = -20;
+    private const long WS_EX_TOOLWINDOW = 0x00000080, WS_EX_APPWINDOW = 0x00040000;
+    private const int DWMWA_CLOAKED = 14;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+
+    private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdc, ref RECT lprcMonitor, IntPtr data);
+
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")]
+    private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc proc, IntPtr data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO info);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int idx);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int idx, IntPtr val);
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
+}

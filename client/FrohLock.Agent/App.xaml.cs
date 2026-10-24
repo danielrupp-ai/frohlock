@@ -98,6 +98,7 @@ public partial class App : Application
             HideLock();
         };
         _hook.OnBlockedKey = () => _lock?.ShowFriendlyBypass();
+        _lock.CoverageProblem = ReportCoverageProblem;
 
         _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _poll.Tick += async (_, _) => await PollAsync();
@@ -106,6 +107,8 @@ public partial class App : Application
         // Bildschirm an/aus, Deckel, externer Monitor, Windows-Sperre -> Dienst zählt nur bei sichtbarem Bildschirm.
         _screen.Start();
         _screen.Changed += async () => await SendAliveAsync();
+        _screen.DisplayLayoutChanged += () => _lock?.EnsureCoverage();
+        try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.BeginInvoke(() => _lock?.EnsureCoverage()); } catch { }
 
         _alive = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         _alive.Tick += async (_, _) => await SendAliveAsync();
@@ -205,10 +208,26 @@ public partial class App : Application
         if (!_lock.IsVisible)
         {
             _lock.Show();
+            _lock.EnsureCoverage(report: false);
             _lock.Activate();
         }
         if (_hook is not null) _hook.Active = true;
         _lastReminderMinutes = -1; // nach der Sperre wieder erinnern dürfen
+    }
+
+    private readonly Dictionary<string, DateTime> _lastCoverageReport = new();
+
+    /// <summary>Befund ans Geräte-Protokoll (UMGEHUNG) – je Befundart höchstens alle 5 Minuten.</summary>
+    private void ReportCoverageProblem(string text, bool alert)
+    {
+        var key = text.Length > 40 ? text[..40] : text;
+        var now = DateTime.UtcNow;
+        if (_lastCoverageReport.TryGetValue(key, out var last) && now - last < TimeSpan.FromMinutes(5)) return;
+        _lastCoverageReport[key] = now;
+        _ = _ipc.SendAsync(new FrohLock.Core.Ipc.IpcMessage
+        {
+            Kind = FrohLock.Core.Ipc.IpcKind.BypassReport, Reason = text, Alert = alert
+        });
     }
 
     private static bool ServiceInstalled()

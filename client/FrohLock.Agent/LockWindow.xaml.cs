@@ -3,6 +3,7 @@ using FrohLock.Core;
 using FrohLock.Core.Crypto;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
@@ -100,6 +101,8 @@ public partial class LockWindow : Window
         Height = SystemParameters.VirtualScreenHeight;
 
         Loaded += (_, _) => { PinBox.Focus(); UpdateClock(); UpdateHeading(); };
+        // Werkzeugfenster erscheinen auf allen virtuellen Desktops.
+        SourceInitialized += (_, _) => ScreenCover.MakeToolWindow(new WindowInteropHelper(this).Handle);
 
         _assertTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
         _assertTimer.Tick += (_, _) => { AssertForeground(); UpdateClock(); UpdateCountdown(); };
@@ -270,9 +273,34 @@ public partial class LockWindow : Window
         _assertTimer.Stop();
     }
 
+    /// <summary>Meldet, wenn der Sperrbildschirm nicht alles abdeckte (Befund, Warnung ja/nein).</summary>
+    public Action<string, bool>? CoverageProblem { get; set; }
+
+    /// <summary>
+    /// Sperrfläche in echten Pixeln über ALLE aktuellen Bildschirme legen – bei jedem Takt und jedem
+    /// Bildschirmwechsel. Vorher wurde die Fläche nur einmal beim Start gesetzt (Fehler 24.10.:
+    /// externer Monitor ab-/angesteckt -> Laptop-Bildschirm blieb frei, obwohl „gesperrt").
+    /// </summary>
+    /// <param name="report">false beim Einblenden – dann ist das Nachziehen erwartet, kein Befund.</param>
+    public void EnsureCoverage(bool report = true)
+    {
+        if (!IsVisible) return;
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+            var problem = ScreenCover.Ensure(hwnd);
+            if (problem is not null && report) CoverageProblem?.Invoke(problem, true);
+            if (ScreenCover.IsCloaked(hwnd))
+                CoverageProblem?.Invoke("Sperrbildschirm war unsichtbar (anderer virtueller Desktop o. Ä.)", true);
+        }
+        catch { }
+    }
+
     private void AssertForeground()
     {
         if (!IsVisible) return;
+        EnsureCoverage();
         Topmost = false; Topmost = true;
         if (WindowState != WindowState.Maximized) WindowState = WindowState.Normal;
         Activate();
