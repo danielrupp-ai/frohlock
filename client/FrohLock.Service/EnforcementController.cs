@@ -447,14 +447,29 @@ public sealed class EnforcementController
     /// Sperrbildschirm deckte nicht alles ab (falsche Fläche, minimiert, unsichtbar) – ins Geräte-Protokoll,
     /// damit die Eltern im Admin sehen, WIE die Sperre ausgehebelt war. Text kommt aus dem Nutzerprozess.
     /// </summary>
-    public void ReportCoverageProblem(string text, bool alert)
+    public void ReportCoverageProblem(string text, bool alert, bool escalate = false)
     {
         var clean = (text ?? "").Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ').Trim();
         if (clean.Length > 300) clean = clean[..300];
         if (clean.Length == 0) return;
         bool locked = Decide().IsLocked;
         _audit.Write("UMGEHUNG", (alert ? "⚠ " : "") + clean + (locked ? " (während Sperre)" : ""));
+
+        // Fremdes Fenster kommt trotz Minimieren immer wieder: Windows-Sitzung trennen (Anmeldebildschirm).
+        // Nur wenn wirklich gesperrt, höchstens alle 90 s – Programme laufen weiter, nur der Zugriff ist weg.
+        if (!escalate || !locked) return;
+        lock (_gate)
+        {
+            if ((DateTime.UtcNow - _lastBypassDisconnectUtc) < TimeSpan.FromSeconds(90)) return;
+            _lastBypassDisconnectUtc = DateTime.UtcNow;
+        }
+        bool ok = Interop.SessionLauncher.DisconnectActiveSession();
+        _audit.Write("UMGEHUNG", ok
+            ? "⚠ Sperre wurde dauerhaft überdeckt – Windows-Sitzung getrennt (Anmeldebildschirm)"
+            : "⚠ Sperre wurde dauerhaft überdeckt – Trennen der Sitzung fehlgeschlagen");
     }
+
+    private DateTime _lastBypassDisconnectUtc = DateTime.MinValue;
 
     /// <summary>Sofort sperren (Fern-Befehl oder Overlay-Manipulation erkannt).</summary>
     public void ForceLock(string reason)

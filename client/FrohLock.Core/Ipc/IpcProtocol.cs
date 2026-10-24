@@ -58,4 +58,6 @@ public sealed class IpcMessage
 
     /// <summary>Mit BypassReport: true = Warnung für die Eltern (⚠), false = reine Diagnose.</summary>
     public bool Alert { get; set; }
+    /// <summary>Mit BypassReport: Fremdfenster kommt trotz Minimieren immer wieder -> Dienst soll die Sitzung trennen.</summary>
+    public bool Escalate { get; set; }
 }

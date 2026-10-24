@@ -99,6 +99,7 @@ public partial class App : Application
         };
         _hook.OnBlockedKey = () => _lock?.ShowFriendlyBypass();
         _lock.CoverageProblem = ReportCoverageProblem;
+        _lock.ForeignWindowOverLock = ReportForeignWindow;
 
         _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _poll.Tick += async (_, _) => await PollAsync();
@@ -208,6 +209,7 @@ public partial class App : Application
         if (!_lock.IsVisible)
         {
             _lock.Show();
+            _lock.ResetGuard();
             _lock.EnsureCoverage(report: false);
             _lock.Activate();
         }
@@ -227,6 +229,25 @@ public partial class App : Application
         _ = _ipc.SendAsync(new FrohLock.Core.Ipc.IpcMessage
         {
             Kind = FrohLock.Core.Ipc.IpcKind.BypassReport, Reason = text, Alert = alert
+        });
+    }
+
+    private readonly Dictionary<string, DateTime> _lastForeignReport = new();
+
+    /// <summary>
+    /// Fremdes Fenster über der Sperre -> UMGEHUNG ins Geräte-Protokoll (je Programm höchstens alle 2 Minuten,
+    /// Eskalationen immer), damit die Eltern sehen, WELCHES Programm die Sperre überdeckt hat.
+    /// </summary>
+    private void ReportForeignWindow(string text, bool escalate)
+    {
+        var now = DateTime.UtcNow;
+        int cut = text.IndexOf(" (", StringComparison.Ordinal);
+        var key = cut > 0 ? text[..cut] : text;
+        if (!escalate && _lastForeignReport.TryGetValue(key, out var last) && now - last < TimeSpan.FromMinutes(2)) return;
+        _lastForeignReport[key] = now;
+        _ = _ipc.SendAsync(new FrohLock.Core.Ipc.IpcMessage
+        {
+            Kind = FrohLock.Core.Ipc.IpcKind.BypassReport, Reason = text, Alert = true, Escalate = escalate
         });
     }
 

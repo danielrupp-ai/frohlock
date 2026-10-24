@@ -46,6 +46,7 @@ public sealed class KeyboardHook : IDisposable
                 var key = KeyInterop.KeyFromVirtualKey((int)data.vkCode);
                 bool alt = (data.flags & 0x20) != 0; // LLKHF_ALTDOWN
                 bool ctrl = (GetKeyState(0x11) & 0x8000) != 0;
+                bool shift = (GetKeyState(0x10) & 0x8000) != 0;
 
                 bool block =
                     key is Key.LWin or Key.RWin
@@ -53,6 +54,7 @@ public sealed class KeyboardHook : IDisposable
                     || (alt && key == Key.F4)
                     || (alt && key == Key.Escape)
                     || (ctrl && key == Key.Escape)
+                    || (ctrl && shift && key == Key.Escape)   // Task-Manager
                     || key == Key.Apps;
 
                 if (block)

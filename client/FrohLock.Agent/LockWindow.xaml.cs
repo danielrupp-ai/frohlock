@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using FrohLock.Core;
 using FrohLock.Core.Crypto;
+using FrohLock.Core.Schedule;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -276,6 +277,33 @@ public partial class LockWindow : Window
     /// <summary>Meldet, wenn der Sperrbildschirm nicht alles abdeckte (Befund, Warnung ja/nein).</summary>
     public Action<string, bool>? CoverageProblem { get; set; }
 
+    /// <summary>Ein fremdes Fenster lag über der Sperre bzw. hatte den Vordergrund (Befund, Eskalation nötig?).</summary>
+    public Action<string, bool>? ForeignWindowOverLock { get; set; }
+
+    private readonly BypassEscalation _escalation = new();
+    private readonly System.Diagnostics.Stopwatch _guardClock = System.Diagnostics.Stopwatch.StartNew();
+
+    /// <summary>Beim Einblenden neu anfangen zu zählen.</summary>
+    public void ResetGuard() => _escalation.Step(_guardClock.Elapsed.TotalSeconds + BypassEscalation.WindowSeconds + 1, false);
+
+    /// <summary>
+    /// Liegt ein fremdes Fenster über der Sperre (Vollbild-Spiel, Browser) oder hat es die Tastatur?
+    /// Dann minimieren, Vordergrund zurückholen, melden – und bei Dauerzustand eskalieren.
+    /// </summary>
+    private void GuardAgainstForeignWindows(IntPtr hwnd)
+    {
+        var foreign = ScreenCover.FindForeign(hwnd);
+        bool escalate = _escalation.Step(_guardClock.Elapsed.TotalSeconds, foreign is not null && !foreign.Shell);
+        if (foreign is null) return;
+        bool minimized = ScreenCover.Minimize(foreign);
+        ScreenCover.ForceForeground(hwnd);
+        ShowFriendlyBypass();
+        string text = $"Fremdes Fenster über der Sperre: {foreign.Describe()}"
+                      + (minimized ? " – minimiert" : "")
+                      + (escalate ? $" – trotz Minimieren immer wieder ({_escalation.RecentHits}+ Treffer/Min) – Sitzung wird getrennt" : "");
+        ForeignWindowOverLock?.Invoke(text, escalate);
+    }
+
     /// <summary>
     /// Sperrfläche in echten Pixeln über ALLE aktuellen Bildschirme legen – bei jedem Takt und jedem
     /// Bildschirmwechsel. Vorher wurde die Fläche nur einmal beim Start gesetzt (Fehler 24.10.:
@@ -293,6 +321,7 @@ public partial class LockWindow : Window
             if (problem is not null && report) CoverageProblem?.Invoke(problem, true);
             if (ScreenCover.IsCloaked(hwnd))
                 CoverageProblem?.Invoke("Sperrbildschirm war unsichtbar (anderer virtueller Desktop o. Ä.)", true);
+            if (report) GuardAgainstForeignWindows(hwnd);
         }
         catch { }
     }
@@ -301,9 +330,14 @@ public partial class LockWindow : Window
     {
         if (!IsVisible) return;
         EnsureCoverage();
-        Topmost = false; Topmost = true;
-        if (WindowState != WindowState.Maximized) WindowState = WindowState.Normal;
-        Activate();
+        Topmost = true;
+        if (WindowState != WindowState.Normal) WindowState = WindowState.Normal;
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero) ScreenCover.ForceForeground(hwnd); else Activate();
+        }
+        catch { Activate(); }
         try { PinBox.Focus(); } catch { }
     }
 
