@@ -56,7 +56,7 @@ def download():
     return FileResponse(path, media_type="application/octet-stream", filename=INSTALLER_NAME)
 
 
-@router.get("/download/android")
+@router.api_route("/download/android", methods=["GET", "HEAD"])
 def download_android():
     """APK für Android – lädt der Einrichtungsassistent nach dem QR-Code selbst herunter."""
     path = android.apk_path()

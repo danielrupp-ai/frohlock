@@ -30,6 +30,7 @@ class ParentActivity : Activity() {
         val scroll = ScrollView(this)
         col = Ui.column(this, 22)
         scroll.addView(col)
+        Ui.fitSystemBars(scroll)
         setContentView(scroll)
         if (Guard.enforcer.isConfigured) showGate(null) else { unlocked = true; showMenu() }
     }
@@ -49,10 +50,16 @@ class ParentActivity : Activity() {
         col.addView(pin)
         col.addView(Ui.keyboardToggle(this, pin))
         col.addView(Ui.button(this, "Öffnen") {
-            val r = Guard.enforcer.checkPin(pin.text.toString())
-            if (r.ok) { unlocked = true; showMenu() }
-            else showGate(if (r.remaining == 0) "Zu viele Fehlversuche heute – nur noch die Master-PIN hilft."
-                          else "Falsche PIN. Noch ${r.remaining} Versuche heute.")
+            val entered = pin.text.toString()
+            it.isEnabled = false
+            Thread {
+                val r = Guard.enforcer.checkPin(entered)   // PBKDF2 – nicht im Bedien-Thread
+                runOnUiThread {
+                    if (r.ok) { unlocked = true; showMenu() }
+                    else showGate(if (r.remaining == 0) "Zu viele Fehlversuche heute – nur noch die Master-PIN hilft."
+                                  else "Falsche PIN. Noch ${r.remaining} Versuche heute.")
+                }
+            }.start()
         })
     }
 

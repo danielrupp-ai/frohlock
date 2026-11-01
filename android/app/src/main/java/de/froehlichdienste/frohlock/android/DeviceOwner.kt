@@ -12,6 +12,7 @@ import android.os.UserManager
 import android.provider.AlarmClock
 import android.telecom.TelecomManager
 import android.view.inputmethod.InputMethodManager
+import de.froehlichdienste.frohlock.BuildConfig
 
 /**
  * Alles, was FrohLock als Geräte-Verwalter (Device Owner) darf. Ohne Device Owner sind alle
@@ -34,7 +35,7 @@ object DeviceOwner {
     private val RELAXABLE: List<String> = buildList {
         add(UserManager.DISALLOW_FACTORY_RESET)        // Zurücksetzen über die Einstellungen
         add(UserManager.DISALLOW_SAFE_BOOT)            // abgesicherter Modus
-        add(UserManager.DISALLOW_DEBUGGING_FEATURES)   // Entwickleroptionen / USB-Debugging
+        if (!BuildConfig.ALLOW_DEBUGGING) add(UserManager.DISALLOW_DEBUGGING_FEATURES)   // Entwickleroptionen / USB-Debugging
         add(UserManager.DISALLOW_CONFIG_DATE_TIME)     // Uhrzeit verstellen
         add(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
         if (Build.VERSION.SDK_INT >= 29) add(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)

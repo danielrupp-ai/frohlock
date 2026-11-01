@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val testBuild: Boolean = (findProperty("frohlockTestBuild") as String?) == "true"
+if (testBuild && !System.getenv("FROHLOCK_KEYSTORE").isNullOrBlank())
+    throw GradleException("Test-Build (USB-Debugging erlaubt) darf NIE mit dem Release-Schlüssel signiert werden")
+
 // Version kommt aus dem Git-Tag (CI: -PfrohlockVersion=1.2.3), lokal Standard.
 val appVersion: String = (findProperty("frohlockVersion") as String?)?.removePrefix("android-v") ?: "1.0.0"
 val appVersionCode: Int = appVersion.split(".").map { it.toIntOrNull() ?: 0 }
@@ -19,6 +23,8 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersion
+        // Nur für Emulator-Tests: USB-Debugging bleibt erlaubt (-PfrohlockTestBuild=true).
+        buildConfigField("boolean", "ALLOW_DEBUGGING", if (testBuild) "true" else "false")
     }
 
     // Release-Schlüssel NUR aus Umgebungsvariablen (CI-Secret / lokal), nie im Repo.

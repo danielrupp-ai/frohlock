@@ -50,6 +50,7 @@ class SetupActivity : Activity() {
         val scroll = ScrollView(this)
         col = Ui.column(this, 24)
         scroll.addView(col)
+        Ui.fitSystemBars(scroll)
         setContentView(scroll)
         next()
     }
@@ -91,7 +92,7 @@ class SetupActivity : Activity() {
 
     private fun showPairForm(error: String?) {
         header("Schritt 1 von 3", "Mit dem Admin verbinden",
-            "Den 6-stelligen Kopplungscode bekommst du im FrohLock-Admin unter „Neues Gerät koppeln“.")
+            "Den 6-stelligen Kopplungscode zeigt der FrohLock-Admin unter „Android-Gerät einrichten“ (unter dem QR-Code).")
         if (error != null) col.addView(Ui.text(this, "⚠ $error", 15f, Ui.WARN))
         val p = Guard.pairing()
         val code = Ui.input(this, "Kopplungscode (6 Ziffern)", InputType.TYPE_CLASS_NUMBER).apply { setText(p?.pendingCode ?: "") }

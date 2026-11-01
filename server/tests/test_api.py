@@ -380,6 +380,7 @@ def test_android_qr_pairing_copies_settings_and_updates_separately(client, tmp_p
     r = client.get("/download/android")
     assert r.status_code == 200 and r.content == b"PK-fake-apk"
     assert r.headers["content-type"] == "application/vnd.android.package-archive"
+    assert client.head("/download/android").status_code == 200
 
     # Einstellungen nachträglich übernehmen (Geräteseite).
     r = client.post(f"/admin/devices/{lap['deviceId']}/copy-from", data={"source_id": ph["deviceId"]}, follow_redirects=False)

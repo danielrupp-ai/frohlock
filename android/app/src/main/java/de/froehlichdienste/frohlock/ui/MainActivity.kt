@@ -60,6 +60,7 @@ class MainActivity : Activity() {
             startActivity(Intent(this, ParentActivity::class.java))
         })
         scroll.addView(col)
+        Ui.fitSystemBars(scroll)
         setContentView(scroll)
     }
 
@@ -77,7 +78,7 @@ class MainActivity : Activity() {
             e.unlockUntilLabel() != null -> "🔓 Freigegeben bis ${e.unlockUntilLabel()} Uhr"
             else -> "✓ Frei"
         }
-        state.setTextColor(if (d.locked) Ui.WARN else Ui.GOOD)
+        state.setTextColor(if (!e.isConfigured) 0xDDFFFFFF.toInt() else if (d.locked) Ui.WARN else Ui.GOOD)
         val used = e.todayUsageMinutes()
         val budget = e.todayBudgetMinutes()
         usage.text = "Bildschirmzeit heute: ${UsageTimeline.fmtMinutes(used)}" + if (budget > 0) " von ${UsageTimeline.fmtMinutes(budget)}" else ""

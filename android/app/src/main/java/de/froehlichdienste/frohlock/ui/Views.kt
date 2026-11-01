@@ -59,7 +59,7 @@ object Ui {
             .apply { bottomMargin = dpi(ctx, 14) }
     }
 
-    fun button(ctx: Context, label: String, primary: Boolean = true, onClick: () -> Unit) = Button(ctx).apply {
+    fun button(ctx: Context, label: String, primary: Boolean = true, onClick: (Button) -> Unit) = Button(ctx).apply {
         text = label; isAllCaps = false; textSize = 17f
         setTextColor(if (primary) 0xFF1A1440.toInt() else Color.WHITE)
         background = GradientDrawable().apply {
@@ -69,7 +69,7 @@ object Ui {
         val h = dpi(ctx, 14); setPadding(h, h, h, h)
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             .apply { topMargin = dpi(ctx, 6); bottomMargin = dpi(ctx, 6) }
-        setOnClickListener { onClick() }
+        setOnClickListener { onClick(this) }
     }
 
     fun input(ctx: Context, hint: String, type: Int = InputType.TYPE_CLASS_TEXT) = EditText(ctx).apply {
@@ -94,6 +94,23 @@ object Ui {
             text = if (numeric) "123 – Ziffern eingeben" else "ABC – Buchstaben eingeben"
             field.setSelection(field.text.length)
         }
+    }
+
+    /** Android 15 zeichnet bis an den Rand: Inhalt um Status-/Navigationsleiste (und Tastatur) einrücken. */
+    fun fitSystemBars(v: View) {
+        val base = intArrayOf(v.paddingLeft, v.paddingTop, v.paddingRight, v.paddingBottom)
+        v.setOnApplyWindowInsetsListener { view, insets ->
+            val top: Int; val bottom: Int
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime())
+                top = bars.top; bottom = bars.bottom
+            } else {
+                @Suppress("DEPRECATION") run { top = insets.systemWindowInsetTop; bottom = insets.systemWindowInsetBottom }
+            }
+            view.setPadding(base[0], base[1] + top, base[2], base[3] + bottom)
+            insets
+        }
+        v.requestApplyInsets()
     }
 
     fun nightBackground(a: Activity) {

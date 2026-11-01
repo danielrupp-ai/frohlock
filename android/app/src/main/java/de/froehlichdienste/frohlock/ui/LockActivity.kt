@@ -41,7 +41,7 @@ class LockActivity : Activity() {
     private lateinit var sweet: TextView
     private lateinit var pinPanel: LinearLayout
     private lateinit var pinMsg: TextView
-    private var sweetIdx = 0
+    private var sweetIdx = -1
     private var leaving = false
 
     private val refresher = object : Runnable {
@@ -99,13 +99,28 @@ class LockActivity : Activity() {
         }
         scroll.addView(col)
         root.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        Ui.fitSystemBars(scroll)
         setContentView(root)
     }
 
+    private var checking = false
+
     private fun submit(pin: String, minutes: Int) {
         if (pin.isBlank()) { pinMsg.text = "Bitte zuerst die PIN eingeben."; return }
-        val r = Guard.enforcer.submitPin(pin, minutes)
+        if (checking) return
+        checking = true
+        pinMsg.setTextColor(0xDDFFFFFF.toInt())
+        pinMsg.text = "Einen Moment …"
+        // PBKDF2 mit 210.000 Runden dauert auf einfachen Handys spürbar – nie im Bedien-Thread.
+        Thread {
+            val r = Guard.enforcer.submitPin(pin, minutes)
+            ui.post { checking = false; showPinResult(r) }
+        }.start()
+    }
+
+    private fun showPinResult(r: de.froehlichdienste.frohlock.core.Enforcer.PinResult) {
         if (r.ok) {
+            pinMsg.setTextColor(Ui.GOOD)
             pinMsg.text = "Entsperrt ✓"
             GuardService.poke(this)
             refresh()
@@ -200,9 +215,12 @@ class LockActivity : Activity() {
                 body.text = d.reason
             }
         }
-        if (SystemClock.uptimeMillis() / 8000 % SWEET.size != sweetIdx.toLong()) {
-            sweetIdx = (SystemClock.uptimeMillis() / 8000 % SWEET.size).toInt()
-            sweet.text = SWEET[sweetIdx]
+        // Nachts Gute-Nacht-Sätze, tagsüber (Limit, Auszeit, Sofortsperre) Tages-Sätze.
+        val list = if (d.reason.startsWith("Sperrfenster")) SWEET_NIGHT else SWEET_DAY
+        val idx = (SystemClock.uptimeMillis() / 8000 % list.size).toInt() + if (list === SWEET_NIGHT) 0 else 100
+        if (idx != sweetIdx) {
+            sweetIdx = idx
+            sweet.text = list[idx % 100]
         }
     }
 
@@ -224,13 +242,19 @@ class LockActivity : Activity() {
             Handler(Looper.getMainLooper()).post { instances.mapNotNull { it.get() }.forEach { it.leave() } }
         }
 
-        private val SWEET = listOf(
+        private val SWEET_NIGHT = listOf(
             "Die Sterne passen heute auf dich auf. ⭐",
             "Der Mond sagt: Gute Nacht, kleiner Schatz. 🌙",
             "Morgen wartet ein neuer, schöner Tag auf dich. ☀️",
             "Auch Handys und Tablets brauchen mal eine Pause. 😴",
             "Mama und Papa haben dich ganz doll lieb. 💛",
+        )
+        private val SWEET_DAY = listOf(
             "Lies doch ein Buch oder spiel etwas Schönes. 📚",
+            "Wie wär's mit einer Runde draußen? 🌳",
+            "Mal doch ein Bild – vielleicht für Mama oder Papa? 🎨",
+            "Auch Handys und Tablets brauchen mal eine Pause. 😴",
+            "Mama und Papa haben dich ganz doll lieb. 💛",
         )
     }
 }
