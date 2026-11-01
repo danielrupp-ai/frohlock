@@ -48,5 +48,13 @@ class Settings:
         self.update_url: str = os.getenv("FROHLOCK_UPDATE_URL", "")
         self.update_sha256: str = os.getenv("FROHLOCK_UPDATE_SHA256", "")
 
+        # Android: Version/Prüfsumme werden aus dem Download-Ordner gelesen (FrohLock.apk +
+        # android-version.txt + android-cert.txt, geschrieben von update-download.sh) – kein
+        # Container-Neustart nötig. Umgebungsvariablen überschreiben das nur bei Bedarf.
+        self.android_update_version: str = os.getenv("FROHLOCK_ANDROID_UPDATE_VERSION", "")
+        self.android_update_sha256: str = os.getenv("FROHLOCK_ANDROID_UPDATE_SHA256", "")
+        # Base64url-SHA-256 des APK-Signaturzertifikats (für den Einrichtungs-QR-Code).
+        self.android_cert_checksum: str = os.getenv("FROHLOCK_ANDROID_CERT_CHECKSUM", "")
+
 
 settings = Settings()

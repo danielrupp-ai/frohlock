@@ -9,7 +9,8 @@
     <tr><th>Name</th><th>Status</th><th>Heute</th><th>Version</th><th>Zuletzt gesehen</th><th></th></tr>
     {% for d in devices %}
     <tr>
-      <td>{{ d["name"] }}</td>
+      <td>{% if d["platform"] == "android" %}📱{% else %}💻{% endif %} {{ d["name"] }}
+        {% if d["platform"] == "android" and d["device_owner"] == 0 %}<br><span class="muted" style="color:#ffab40">⚠ ohne Geräte-Verwaltung</span>{% endif %}</td>
       <td>
         {% if not d["last_seen"] or now - d["last_seen"] > 300 %}
           <span class="badge off">offline</span>
@@ -32,12 +33,19 @@
     {% endfor %}
   </table>
   {% else %}
-  <p class="muted">Noch keine Geräte gekoppelt. Erzeuge unten einen Kopplungscode und gib ihn beim Setup auf dem Laptop ein.</p>
+  <p class="muted">Noch keine Geräte gekoppelt. Unten ein Android-Gerät per QR-Code hinzufügen oder einen Kopplungscode für den Laptop erzeugen.</p>
   {% endif %}
 </div>
 
 <div class="card">
-  <h2>Neues Gerät koppeln</h2>
+  <h2>📱 Android-Handy oder -Tablet hinzufügen</h2>
+  <p class="muted" style="margin:0 0 10px">Per QR-Code beim Einrichten des Handys – FrohLock wird dabei Geräte-Verwalter
+    und ist für das Kind nicht zu löschen. Einstellungen (Sperrzeiten, Limit, PIN) lassen sich von einem anderen Gerät übernehmen.</p>
+  <a class="btn" href="/admin/android/new"><button type="button">Android-Gerät einrichten</button></a>
+</div>
+
+<div class="card">
+  <h2>💻 Neues Windows-Gerät koppeln</h2>
   <form class="row" method="post" action="/admin/pairing">
     <input name="device_name" placeholder="z. B. Laptop Kind 1">
     <button type="submit">Kopplungscode erzeugen</button>
@@ -48,7 +56,7 @@
     {% for c in codes %}
     <tr>
       <td><code class="code">{{ c["code"] }}</code></td>
-      <td>{{ c["device_name"] }}</td>
+      <td>{% if c["platform"] == "android" %}📱 <a href="/admin/android/qr/{{ c['code'] }}" style="color:#9ecbff">{{ c["device_name"] }} – QR-Code zeigen</a>{% else %}{{ c["device_name"] }}{% endif %}</td>
       <td class="muted">{{ ((c["expires_at"] - now) // 3600) }} h</td>
     </tr>
     {% endfor %}

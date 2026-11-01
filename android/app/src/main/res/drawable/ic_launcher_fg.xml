@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mondsichel über einem Schloss, Sterne – wie das FrohLock-Logo -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFF3C4" android:pathData="M64,26a14,14 0,1 0,14 20a11,11 0,1 1,-14 -20z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M34,30l1.5,3.5 3.5,1.5 -3.5,1.5 -1.5,3.5 -1.5,-3.5 -3.5,-1.5 3.5,-1.5z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M44,22l1,2.2 2.2,1 -2.2,1 -1,2.2 -1,-2.2 -2.2,-1 2.2,-1z" />
+    <path android:fillColor="#00000000" android:strokeColor="#FFD54F" android:strokeWidth="5"
+        android:pathData="M44,58v-6a10,10 0,0 1,20 0v6" />
+    <path android:fillColor="#FFD54F" android:pathData="M38,58h32a4,4 0,0 1,4 4v18a4,4 0,0 1,-4 4h-32a4,4 0,0 1,-4 -4v-18a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#2A1B5C" android:pathData="M54,66a4,4 0,0 1,2 7.5v4.5h-4v-4.5a4,4 0,0 1,2 -7.5z" />
+</vector>

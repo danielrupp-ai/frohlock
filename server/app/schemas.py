@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 class RegisterRequest(BaseModel):
     pairingCode: str
     deviceName: str = "Gerät"
+    platform: str = ""            # "android" (Windows-Clients schicken nichts)
+    deviceInfo: dict = Field(default_factory=dict)
 
 
 class RegisterResponse(BaseModel):
@@ -55,3 +57,9 @@ class HeartbeatIn(BaseModel):
     penaltyCount: int = 0
     agentAliveAgeSeconds: int = -1
     recentAudit: str = ""
+    # Nur Android:
+    platform: str = ""
+    deviceOwner: bool | None = None
+    lockTaskActive: bool | None = None
+    deviceInfo: dict = Field(default_factory=dict)
+    relaxedUntilUnix: int = 0

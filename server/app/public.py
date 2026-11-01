@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from . import android
 from .config import settings
 
 router = APIRouter()
@@ -42,6 +43,8 @@ def landing(request: Request):
         "version": _version(),
         "size_mb": _size_mb(),
         "available": os.path.exists(_installer_path()),
+        "android_available": os.path.exists(android.apk_path()),
+        "android_version": android.apk_version(),
     })
 
 
@@ -51,3 +54,12 @@ def download():
     if not os.path.exists(path):
         return HTMLResponse("<h1>Download derzeit nicht verfügbar</h1>", status_code=404)
     return FileResponse(path, media_type="application/octet-stream", filename=INSTALLER_NAME)
+
+
+@router.get("/download/android")
+def download_android():
+    """APK für Android – lädt der Einrichtungsassistent nach dem QR-Code selbst herunter."""
+    path = android.apk_path()
+    if not os.path.exists(path):
+        return HTMLResponse("<h1>Android-App derzeit nicht verfügbar</h1>", status_code=404)
+    return FileResponse(path, media_type="application/vnd.android.package-archive", filename=android.APK_NAME)

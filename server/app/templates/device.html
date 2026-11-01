@@ -4,7 +4,7 @@
 {{ flash_box(flash) }}
 <div class="card">
   <div class="row" style="justify-content:space-between">
-    <h1 style="margin:0">{{ dev["name"] }}</h1>
+    <h1 style="margin:0">{% if is_android %}📱{% else %}💻{% endif %} {{ dev["name"] }}</h1>
     <div>
       {% if dev["locked"] %}<span class="badge locked">gesperrt</span>{% else %}<span class="badge open">frei</span>{% endif %}
     </div>
@@ -17,13 +17,32 @@
   </p>
   {% if dev["lock_reason"] %}<p class="muted">Grund: {{ dev["lock_reason"] }}</p>{% endif %}
   {% set aa = dev["agent_age"] if "agent_age" in dev.keys() else -1 %}
-  <p class="muted">Overlay-Anzeige:
+  <p class="muted">{% if is_android %}Sperrbildschirm{% else %}Overlay-Anzeige{% endif %}:
     {% if aa is none or aa < 0 %}<span style="color:#ff8a80">❌ nicht aktiv (Sperre würde nicht angezeigt!)</span>
     {% elif aa <= 120 %}<span style="color:#69f0ae">✓ aktiv</span>
     {% else %}<span style="color:#ffab40">⚠ vor {{ aa }} s zuletzt aktiv</span>{% endif %}
   </p>
-  {% if not has_pin %}<p style="color:#ffab40">⚠ Für dieses Gerät ist noch kein PIN gesetzt – bis dahin ist es fail-secure gesperrt.</p>{% endif %}
+  {% if not has_pin %}<p style="color:#ffab40">⚠ Für dieses Gerät ist noch keine Eltern-PIN gesetzt – bis dahin sperrt FrohLock <b>nicht</b>.
+    Unten „PIN setzen“ oder „Einstellungen übernehmen“.</p>{% endif %}
 </div>
+
+{% if is_android %}
+<div class="card" {% if dev["device_owner"] == 0 %}style="border:2px solid #ffab40"{% endif %}>
+  <h2>📱 Android</h2>
+  <table>
+    <tr><td style="width:46%">Geräte-Verwaltung</td><td>
+      {% if dev["device_owner"] == 1 %}<span style="color:#69f0ae">✓ aktiv</span> <span class="muted">– FrohLock ist nicht löschbar und nicht beendbar</span>
+      {% elif dev["device_owner"] == 0 %}<span style="color:#ffab40">⚠ fehlt</span> <span class="muted">– die Sperre ist so leicht zu umgehen. Das Handy über den QR-Code neu einrichten (vorher zurücksetzen).</span>
+      {% else %}<span class="muted">noch keine Meldung</span>{% endif %}</td></tr>
+    <tr><td>Sperr-Modus gerade an</td><td>{% if dev["lock_task"] == 1 %}ja – nur FrohLock, Telefon und Wecker erreichbar{% elif dev["lock_task"] == 0 %}nein{% else %}–{% endif %}</td></tr>
+    {% if android_info.get("model") %}<tr><td>Gerät</td><td>{{ android_info.get("model") }} · {{ android_info.get("android", "") }}</td></tr>{% endif %}
+    <tr><td>App-Version</td><td>{{ dev["app_version"] or "–" }}{% if android_update %} <span class="muted">(bereitgestellt: {{ android_update }}{% if dev["app_version"] and dev["app_version"] != android_update %} – Update kommt von selbst{% endif %})</span>{% endif %}</td></tr>
+    {% if dev["relaxed_until"] and dev["relaxed_until"] > now %}
+    <tr><td>Einstellungen freigeschaltet</td><td style="color:#ffab40">ja, noch {{ ((dev["relaxed_until"] - now) // 60) + 1 }} Min (von Eltern am Gerät)</td></tr>
+    {% endif %}
+  </table>
+</div>
+{% endif %}
 
 <div class="card">
   <h2>Auszeit</h2>
@@ -38,8 +57,8 @@
   <h2>⚠ Auffälligkeiten am Gerät</h2>
   <p class="muted" style="margin:0 0 10px">Hier steht, wenn FrohLock zeitweise nicht gezählt hat (Laptop wach, Schutzdienst lief nicht)
     oder der Sperrbildschirm fehlte (abgestürzt oder beendet) bzw. nicht den ganzen Bildschirm abdeckte (z. B. nach An-/Abstecken eines Monitors – wird sofort korrigiert), oder wenn ein <b>anderes Programm über der Sperre lag</b> (Vollbild-Spiel/Browser) – es steht dann dabei, welches; FrohLock minimiert es und trennt bei Dauerzustand die Windows-Sitzung. Fehlende Zeit wird nachgezählt; fehlt der Sperrbildschirm während
-    einer Sperre, trennt FrohLock die Windows-Sitzung. Häufen sich diese Meldungen, sollte das Konto des Kindes ein
-    <b>Standardkonto</b> sein (kein Administrator).</p>
+    einer Sperre, trennt FrohLock die Windows-Sitzung.{% if is_android %} Auf dem Handy: FrohLock holt den Sperrbildschirm sofort zurück; fehlt die Geräte-Verwaltung, ist das der häufigste Grund.{% else %} Häufen sich diese Meldungen, sollte das Konto des Kindes ein
+    <b>Standardkonto</b> sein (kein Administrator).{% endif %}</p>
   <ul style="margin:0;padding-left:18px">
     {% for a in gap_alerts %}<li style="margin:4px 0"><b>{{ a.when }}</b> – {{ a.msg }}</li>{% endfor %}
   </ul>
@@ -163,6 +182,18 @@
     </form>
     <p class="muted">Der PIN wird nur als Hash gespeichert. {% if has_pin %}Aktuell ist ein PIN gesetzt.{% endif %}</p>
 
+    {% if other_devices %}
+    <h2 style="margin-top:18px">Einstellungen übernehmen</h2>
+    <form class="row" method="post" action="/admin/devices/{{ dev['id'] }}/copy-from"
+          onsubmit="return confirm('Sperrzeiten, Tageslimit und Eltern-PIN dieses Geräts werden durch die des gewählten Geräts ersetzt. Fortfahren?');">
+      <select name="source_id">
+        {% for o in other_devices %}<option value="{{ o['id'] }}">{% if o['platform'] == 'android' %}📱{% else %}💻{% endif %} wie „{{ o['name'] }}“</option>{% endfor %}
+      </select>
+      <button class="secondary" type="submit">Übernehmen</button>
+    </form>
+    <p class="muted">Übernimmt Sperrzeiten, Tageslimits und die Eltern-PIN. Die Bildschirmzeit zählt weiter je Gerät getrennt.</p>
+    {% endif %}
+
     <h2 style="margin-top:18px">Einstellungen</h2>
     <form method="post" action="/admin/devices/{{ dev['id'] }}/settings">
       <div class="row">
@@ -199,13 +230,13 @@
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
         <input type="hidden" name="kind" value="lock"><button class="secondary" type="submit">Sofort sperren</button>
       </form>
-      <p class="muted" style="flex-basis:100%;margin:4px 0 0">„Sofort sperren" gilt ab Version 0.23 sofort und bleibt bestehen,
-        bis Sie „Entsperren" tippen oder am Laptop den Eltern-PIN eingeben.</p>
+      <p class="muted" style="flex-basis:100%;margin:4px 0 0">„Sofort sperren" {% if not is_android %}gilt ab Version 0.23 sofort und {% endif %}bleibt bestehen,
+        bis Sie „Entsperren" tippen oder am {% if is_android %}Handy{% else %}Laptop{% endif %} den Eltern-PIN eingeben.</p>
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
         <input type="hidden" name="kind" value="update"><button class="secondary" type="submit">Update</button>
       </form>
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command"
-            onsubmit="return confirm('Gerät wirklich remote deinstallieren (Admin-Wipe)?');">
+            onsubmit="return confirm({% if is_android %}'FrohLock auf dem Handy freigeben? Alle Sperren werden aufgehoben, danach kann die App gelöscht werden.'{% else %}'Gerät wirklich remote deinstallieren (Admin-Wipe)?'{% endif %});">
         <input type="hidden" name="kind" value="uninstall"><button class="danger" type="submit">App entfernen</button>
       </form>
     </div>

@@ -27,7 +27,7 @@
     .dl:hover{transform:translateY(-2px)}
     .dl .ico{font-size:26px}
     .meta{margin-top:12px;color:var(--soft);font-size:13px}
-    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:40px 0}
+    .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin:40px 0}
     @media(max-width:640px){.grid{grid-template-columns:1fr}}
     .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px}
     .card .ic{font-size:30px}
@@ -52,7 +52,7 @@
     <div class="hero">
       <div class="moon">🌙</div>
       <h1>Bildschirmzeit, die einfach funktioniert</h1>
-      <p class="sub">Sanfte, liebevolle Bildschirmzeit-Grenzen für den Laptop deiner Kinder – zu festen Zeiten und mit optionalem Tageslimit.</p>
+      <p class="sub">Sanfte, liebevolle Bildschirmzeit-Grenzen für Laptop, Handy und Tablet deiner Kinder – zu festen Zeiten und mit optionalem Tageslimit.</p>
 
       {% if available %}
       <a class="dl" href="/download"><span class="ico">⬇️</span> Für Windows herunterladen</a>
@@ -70,6 +70,7 @@
     <div class="grid">
       <div class="card"><div class="ic">🌙</div><h3>Feste Sperrzeiten</h3><p>Z. B. 21–7 Uhr komplett gesperrt – mit freundlichem Gute-Nacht-Bildschirm für die Kinder.</p></div>
       <div class="card"><div class="ic">⏳</div><h3>Tageslimit</h3><p>Optional z. B. 2 Stunden Gesamtnutzung pro Tag. Danach ist sanft Pause.</p></div>
+      <div class="card"><div class="ic">🤖</div><h3>Auch für Android</h3><p>Kinder-Handy und -Tablet per QR-Code einrichten – ohne Play Store, in der Eltern-Verwaltung unter „Android-Gerät einrichten“.{% if android_version %} (Version {{ android_version }}){% endif %}</p></div>
       <div class="card"><div class="ic">📱</div><h3>Vom Handy steuern</h3><p>Sperrzeiten und Limit jederzeit anpassen und die Nutzung live einsehen.</p></div>
     </div>
 

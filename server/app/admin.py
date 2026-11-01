@@ -7,10 +7,10 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import configbuilder, db
+from . import android, configbuilder, db
 from .config import settings
 from .security import pin_hash, verify_password
 from .signing import CMD, sign_command
@@ -277,8 +277,15 @@ def device_detail(request: Request, device_id: str):
     weekday_budgets = [{"idx": d, "label": lbl, "value": wb[d]} for d, lbl in DAYS]
 
     gap_alerts = _gap_alerts(dev)
+    keys = dev.keys()
+    is_android = ("platform" in keys and (dev["platform"] or "") == "android")
+    others = [d for d in db.query("SELECT id, name, platform FROM devices WHERE id<>? ORDER BY name", (device_id,))]
 
     return templates.TemplateResponse("device.html", {
+        "is_android": is_android,
+        "android_info": android.device_info(dev["device_info"] if "device_info" in keys else None),
+        "android_update": android.apk_version(),
+        "other_devices": others,
         "request": request, "dev": dev, "version": version, "draft": draft,
         "windows": windows, "days": DAYS, "audit": audit_rows, "now": int(time.time()),
         "has_pin": bool(draft.get("pinHash")),
@@ -417,3 +424,89 @@ def delete_device(request: Request, device_id: str):
         c.execute("DELETE FROM devices WHERE id=?", (device_id,))
     db.audit(request.session["admin_user"], "device-delete", device_id, "")
     return RedirectResponse("/admin", status_code=303)
+
+
+# ---------- Android: Einrichtung per QR-Code ----------
+
+def _android_ready() -> dict:
+    """Was fehlt noch, damit der QR-Code funktioniert? (APK auf dem Server + Zertifikats-Prüfsumme)."""
+    import os
+    return {"apk": os.path.exists(android.apk_path()), "cert": bool(android.cert_checksum()),
+            "version": android.apk_version()}
+
+
+@router.get("/admin/android/new", response_class=HTMLResponse)
+def android_new_form(request: Request):
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    devices = db.query("SELECT id, name, platform FROM devices ORDER BY name")
+    return templates.TemplateResponse("android_new.html", {
+        "request": request, "devices": devices, "ready": _android_ready(),
+    })
+
+
+def _qr_page(request: Request, code_row, wifi_ssid: str = "", wifi_password: str = ""):
+    ready = _android_ready()
+    payload = android.provisioning_payload(code_row["code"], code_row["device_name"], wifi_ssid, wifi_password)
+    template_name = None
+    keys = code_row.keys()
+    if "template_device_id" in keys and code_row["template_device_id"]:
+        t = db.query_one("SELECT name FROM devices WHERE id=?", (code_row["template_device_id"],))
+        template_name = t["name"] if t else None
+    return templates.TemplateResponse("android_qr.html", {
+        "request": request, "code": code_row, "ready": ready,
+        "qr": android.qr_svg(payload) if ready["apk"] and ready["cert"] else None,
+        "with_wifi": bool(wifi_ssid.strip()), "template_name": template_name,
+        "admin_component": android.ADMIN_COMPONENT, "now": int(time.time()),
+    })
+
+
+@router.post("/admin/android/new", response_class=HTMLResponse)
+def android_new(request: Request, device_name: str = Form("Handy"), template_device_id: str = Form(""),
+                wifi_ssid: str = Form(""), wifi_password: str = Form("")):
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    code = f"{secrets.randbelow(1000000):06d}"
+    now = int(time.time())
+    template = template_device_id.strip() or None
+    if template and not db.query_one("SELECT id FROM devices WHERE id=?", (template,)):
+        template = None
+    with db.tx() as c:
+        c.execute("""INSERT INTO pairing_codes(code, device_name, created_at, expires_at, platform, template_device_id)
+                     VALUES (?,?,?,?,?,?)""",
+                  (code, device_name.strip() or "Handy", now, now + 24 * 3600, "android", template))
+    db.audit(request.session["admin_user"], "pairing-create", None, f"{code} / {device_name} (Android-QR)")
+    row = db.query_one("SELECT * FROM pairing_codes WHERE code=?", (code,))
+    # WLAN-Passwort steht NUR in dieser einen Antwort (im QR-Code), es wird nirgends gespeichert.
+    return _qr_page(request, row, wifi_ssid, wifi_password)
+
+
+@router.get("/admin/android/qr/{code}", response_class=HTMLResponse)
+def android_qr(request: Request, code: str):
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    row = db.query_one("SELECT * FROM pairing_codes WHERE code=?", (code,))
+    if not row:
+        return RedirectResponse("/admin", status_code=303)
+    return _qr_page(request, row)
+
+
+@router.get("/admin/android/qr/{code}/status")
+def android_qr_status(request: Request, code: str):
+    if not _is_admin(request):
+        return JSONResponse({"error": "login"}, status_code=401)
+    row = db.query_one("SELECT used_device_id, expires_at FROM pairing_codes WHERE code=?", (code,))
+    if not row:
+        return JSONResponse({"used": False, "expired": True})
+    return JSONResponse({"used": bool(row["used_device_id"]), "deviceId": row["used_device_id"],
+                         "expired": row["expires_at"] < int(time.time())})
+
+
+@router.post("/admin/devices/{device_id}/copy-from")
+def copy_from(request: Request, device_id: str, source_id: str = Form(...)):
+    """Zeitplan, Limits und PIN eines anderen Geräts übernehmen (z. B. Handy = Laptop)."""
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    name = configbuilder.copy_settings(source_id, device_id)
+    db.audit(request.session["admin_user"], "settings-copy", device_id, f"von {name}" if name else "Quelle ohne Einstellungen")
+    return RedirectResponse(f"/admin/devices/{device_id}?ok={'kopiert' if name else 'nichtskopiert'}", status_code=303)

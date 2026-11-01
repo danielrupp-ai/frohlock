@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from . import configbuilder, db
+from . import android, configbuilder, db
 from .config import settings
 from .schemas import ConfigDraft, HeartbeatIn, RegisterRequest, RegisterResponse
 from .security import authed_device, hash_token, new_token
@@ -34,14 +34,26 @@ def register(req: RegisterRequest):
 
     device_id = _new_id()
     token = new_token()
+    keys = row.keys()
+    platform = (req.platform or (row["platform"] if "platform" in keys else "") or "windows").lower()
+    name = req.deviceName or row["device_name"]
+    # Name aus dem Admin hat Vorrang vor dem Gerätenamen („Handy Danyil" statt „SM-A156B").
+    if platform == "android" and row["device_name"]:
+        name = row["device_name"]
     with db.tx() as c:
         c.execute(
-            "INSERT INTO devices(id, name, token_hash, created_at) VALUES (?,?,?,?)",
-            (device_id, req.deviceName or row["device_name"], hash_token(token), now),
+            "INSERT INTO devices(id, name, token_hash, created_at, platform, device_info) VALUES (?,?,?,?,?,?)",
+            (device_id, name, hash_token(token), now, platform, json.dumps(req.deviceInfo or {})),
         )
         c.execute("UPDATE pairing_codes SET used_device_id = ? WHERE code = ?",
                   (device_id, req.pairingCode.strip()))
-    db.audit("device", "register", device_id, req.deviceName)
+    detail = f"{name} ({platform})"
+    template = row["template_device_id"] if "template_device_id" in keys else None
+    if template:
+        copied = configbuilder.copy_settings(template, device_id)
+        if copied:
+            detail += f" – Einstellungen übernommen von {copied}"
+    db.audit("device", "register", device_id, detail)
     return RegisterResponse(deviceId=device_id, token=token)
 
 
@@ -85,6 +97,14 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
              json.dumps(hb.usageSegments[:100]), hb.usageDay, 1 if hb.screenActive else 0,
              hb.penaltySecondsRemaining, hb.penaltyCount, device_id),
         )
+        if hb.platform:
+            c.execute(
+                """UPDATE devices SET platform=?, device_owner=?, lock_task=?, device_info=?, relaxed_until=?
+                   WHERE id=?""",
+                (hb.platform, None if hb.deviceOwner is None else int(hb.deviceOwner),
+                 None if hb.lockTaskActive is None else int(hb.lockTaskActive),
+                 json.dumps(hb.deviceInfo or {}), hb.relaxedUntilUnix, device_id),
+            )
         _remember_gap_alerts(c, device_id, hb.recentAudit)
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
@@ -147,8 +167,11 @@ def get_commands(device_id: str, request: Request):
     )
     # Auszeit-Befehle erst ab v0.20.0 ausliefern – ältere Clients kennen sie nicht und würden sie
     # quittieren, ohne zu sperren. Bis zum Update bleiben sie in der Warteschlange.
-    dev_row = db.query_one("SELECT app_version FROM devices WHERE id=?", (device_id,))
-    knows_timeout = not _version_older((dev_row["app_version"] if dev_row else "") or "0", "0.20.0")
+    dev_row = db.query_one("SELECT app_version, platform FROM devices WHERE id=?", (device_id,))
+    platform = ((dev_row["platform"] if dev_row else "") or "windows").lower()
+    # Android kennt die Auszeit von Anfang an; Windows erst ab 0.20.0.
+    knows_timeout = platform == "android" or \
+        not _version_older((dev_row["app_version"] if dev_row else "") or "0", "0.20.0")
     out = []
     for r in rows:
         payload = json.loads(r["payload_json"])
@@ -158,12 +181,16 @@ def get_commands(device_id: str, request: Request):
 
     # Selbst-nachlieferndes Update: solange das Gerät eine ÄLTERE Version meldet, bei JEDEM
     # Poll erneut ein Update-Kommando anbieten (robust gegen abgebrochene Downloads bei wackligem Netz).
+    # Je Plattform eigenes Ziel – ein Android-Gerät (1.x) darf nie das Windows-Update (0.x) bekommen.
     try:
-        if settings.update_version and settings.update_url and settings.update_sha256:
-            dev = db.query_one("SELECT app_version FROM devices WHERE id=?", (device_id,))
-            if dev and _version_older(dev["app_version"] or "0", settings.update_version):
-                from .signing import sign_command
-                out.append(sign_command(device_id, "update", expires_in=3600)["envelope"])
+        if platform == "android":
+            t = android.update_target()
+            target = t[0] if t else ""
+        else:
+            target = settings.update_version if (settings.update_url and settings.update_sha256) else ""
+        if target and dev_row and _version_older(dev_row["app_version"] or "0", target):
+            from .signing import sign_command
+            out.append(sign_command(device_id, "update", expires_in=3600)["envelope"])
     except Exception:
         pass
     return out
@@ -178,7 +205,15 @@ def ack_command(device_id: str, command_id: str, request: Request):
 
 
 @router.get("/updates/manifest")
-def update_manifest(channel: str = "stable"):
+def update_manifest(channel: str = "stable", platform: str = "windows"):
+    if platform == "android":
+        t = android.update_target()
+        if not t:
+            raise HTTPException(status_code=404, detail="Kein Android-Update bereitgestellt")
+        from .signing import sign_bytes
+        ver, url, sha = t
+        return {"version": ver, "url": url, "sha256": sha,
+                "signatureBase64": sign_bytes(android.manifest_message(ver, sha))}
     if not settings.update_version or not settings.update_url or not settings.update_sha256:
         raise HTTPException(status_code=404, detail="Kein Update konfiguriert")
     from .signing import sign_update_manifest

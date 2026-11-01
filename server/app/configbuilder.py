@@ -70,3 +70,27 @@ def signed_config_envelope(device_id: str) -> dict | None:
 def current_version(device_id: str) -> int:
     stored = get_stored(device_id)
     return stored[0] if stored else 0
+
+
+# Was beim Übernehmen von einem anderen Gerät mitkommt (Zeitplan, Limits, PIN, Entsperrdauer).
+_COPY_KEYS = ("windows", "dailyBudgetMinutes", "dailyBudgetByWeekday", "unlockGraceMinutes",
+              "pinHash", "pinSalt", "pinIterations", "maxTrustedTimeStalenessMinutes")
+
+
+def copy_settings(source_id: str, target_id: str) -> str | None:
+    """Einstellungen eines Geräts auf ein anderes übernehmen. Gibt den Namen der Quelle zurück (oder None)."""
+    src = get_stored(source_id)
+    if not src:
+        return None
+    _, draft = src
+    target = get_stored(target_id)
+    new = dict(target[1]) if target else {}
+    for k in _COPY_KEYS:
+        if k in draft:
+            new[k] = json.loads(json.dumps(draft[k]))
+    save_draft(target_id, new)
+    row = db.query_one("SELECT name, reset_email FROM devices WHERE id=?", (source_id,))
+    if row and row["reset_email"]:
+        with db.tx() as c:
+            c.execute("UPDATE devices SET reset_email=COALESCE(reset_email, ?) WHERE id=?", (row["reset_email"], target_id))
+    return row["name"] if row else source_id

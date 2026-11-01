@@ -90,6 +90,13 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN penalty_seconds INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN penalty_count INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN gap_alerts TEXT",
+    "ALTER TABLE devices ADD COLUMN platform TEXT DEFAULT 'windows'",
+    "ALTER TABLE devices ADD COLUMN device_owner INTEGER",
+    "ALTER TABLE devices ADD COLUMN lock_task INTEGER",
+    "ALTER TABLE devices ADD COLUMN device_info TEXT",
+    "ALTER TABLE devices ADD COLUMN relaxed_until INTEGER DEFAULT 0",
+    "ALTER TABLE pairing_codes ADD COLUMN platform TEXT DEFAULT 'windows'",
+    "ALTER TABLE pairing_codes ADD COLUMN template_device_id TEXT",
 ]
 
 
