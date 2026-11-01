@@ -26,7 +26,8 @@ class MainActivity : Activity() {
     private lateinit var calc: TextView
     private lateinit var schedule: TextView
     private lateinit var left: TextView
-    private lateinit var updateButton: android.widget.Button
+    private lateinit var updateCard: LinearLayout
+    private lateinit var updateMsg: TextView
 
     private val refresher = object : Runnable { override fun run() { refresh(); ui.postDelayed(this, 5000) } }
 
@@ -57,10 +58,31 @@ class MainActivity : Activity() {
         schedule = Ui.text(this, "", 15f, 0xDDFFFFFF.toInt()).also { card.addView(it) }
         col.addView(card)
 
-        updateButton = Ui.button(this, "⬆️  Neue FrohLock-Version installieren") {
-            de.froehlichdienste.frohlock.android.Updater.pendingConfirm?.let { i -> try { startActivity(i) } catch (_: Exception) { } }
+        // Ohne Geräte-Verwaltung: einmal bestätigen, danach aktualisiert sich FrohLock von selbst.
+        updateCard = Ui.card(this).apply {
+            addView(Ui.text(this@MainActivity, "Automatische Updates einrichten", 18f, Ui.ACCENT, bold = true))
+            addView(Ui.text(this@MainActivity, "Einmal tippen und „Aktualisieren“ bestätigen (fragt Android nach der Quelle: " +
+                "FrohLock zulassen, zurück, nochmal tippen). Danach kommen alle Updates von selbst.", 14f, 0xCCFFFFFF.toInt()))
+            updateMsg = Ui.text(this@MainActivity, "", 14f, Ui.WARN)
+            addView(Ui.button(this@MainActivity, "⬆️  Jetzt einrichten") { b ->
+                val pending = de.froehlichdienste.frohlock.android.Updater.pendingConfirm
+                if (pending != null) { try { startActivity(pending); return@button } catch (_: Exception) { } }
+                if (!packageManager.canRequestPackageInstalls()) {
+                    updateMsg.text = "Zuerst FrohLock als Quelle zulassen – Schalter einschalten, dann zurück und nochmal tippen."
+                    try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        android.net.Uri.parse("package:$packageName"))) } catch (_: Exception) { }
+                    return@button
+                }
+                b.isEnabled = false
+                updateMsg.text = "Lade die aktuelle Version …"
+                Thread {
+                    val err = de.froehlichdienste.frohlock.android.Updater.setupAutoUpdate(this@MainActivity)
+                    ui.post { b.isEnabled = true; updateMsg.text = err ?: "" }
+                }.start()
+            })
+            addView(updateMsg)
         }
-        col.addView(updateButton)
+        col.addView(updateCard)
         col.addView(Ui.button(this, "🔑  Eltern-Bereich", primary = false) {
             startActivity(Intent(this, ParentActivity::class.java))
         })
@@ -75,7 +97,8 @@ class MainActivity : Activity() {
     private fun refresh() {
         val e = Guard.enforcer
         setupBanner.visibility = if (e.isConfigured) View.GONE else View.VISIBLE
-        updateButton.visibility = if (de.froehlichdienste.frohlock.android.Updater.pendingConfirm != null) View.VISIBLE else View.GONE
+        updateCard.visibility = if (Guard.pairing()?.registered == true &&
+            !de.froehlichdienste.frohlock.android.Updater.canUpdateSilently(this)) View.VISIBLE else View.GONE
         val d = e.decide()
         state.text = when {
             !e.isConfigured -> "Noch nicht eingerichtet"

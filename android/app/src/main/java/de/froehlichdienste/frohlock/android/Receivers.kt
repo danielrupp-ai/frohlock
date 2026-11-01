@@ -79,6 +79,8 @@ class BootReceiver : BroadcastReceiver() {
             Guard.audit.write("UPDATE", "Neue Version ${Guard.appVersion} läuft" +
                 if (Updater.canUpdateSilently(ctx)) " – künftige Updates automatisch" else "")
             try { ctx.getSystemService(NotificationManager::class.java).cancel(4) } catch (_: Exception) { }
+            Guard.state.lastUpdatePromptUnix = 0   // neue Version: Wartezeit für das nächste Angebot zurücksetzen
+            Guard.saveState()
         }
         if (Guard.pairing() != null || DeviceOwner.isDeviceOwner(ctx)) GuardService.start(ctx)
     }

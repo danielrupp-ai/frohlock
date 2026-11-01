@@ -52,18 +52,35 @@ object Updater {
         return false
     }
 
-    fun tryUpdate(ctx: Context, api: ServerApi) {
+    /** Vom Knopf in der App angestoßen: Bestätigungsdialog sofort zeigen statt Benachrichtigung. */
+    @Volatile var userInitiated = false
+
+    /**
+     * Knopf „Automatische Updates einrichten": installiert die aktuelle Version (notfalls dieselbe noch einmal)
+     * über FrohLock selbst. Danach ist FrohLock die Installationsquelle und darf sich still aktualisieren.
+     */
+    fun setupAutoUpdate(ctx: Context): String? {
+        val p = Guard.pairing()?.takeIf { it.registered } ?: return "Nicht mit dem Admin verbunden"
+        userInitiated = true
+        return try {
+            tryUpdate(ctx, ServerApi(p.serverUrl, p.deviceId, p.token), force = true)
+            null
+        } catch (e: Exception) { e.message ?: "Keine Verbindung" }
+    }
+
+    fun tryUpdate(ctx: Context, api: ServerApi, force: Boolean = false) {
         val now = System.currentTimeMillis()
         if (runningSince > 0 && now - runningSince < DEADLINE_MS + 60_000) return
         // Ohne Geräte-Verwaltung muss ein Mensch „Installieren" tippen – höchstens alle 6 Stunden anbieten,
         // sonst käme bei jedem Abruf (alle 30 s) ein neuer Download und Dialog.
         val silent = canUpdateSilently(ctx)
-        if (!silent && now / 1000 - Guard.state.lastUpdatePromptUnix < 6 * 3600) return
+        if (!force && !silent && now / 1000 - Guard.state.lastUpdatePromptUnix < 6 * 3600) return
         if (runningSince > 0) Guard.audit.write("UPDATE", "⚠ Hängendes Update nach ${(now - runningSince) / 60_000} Min aufgegeben – neuer Versuch")
         runningSince = now
         try {
             val m = api.androidManifest() ?: return
-            if (!isNewer(Guard.appVersion, m.version)) {
+            // force: auch dieselbe Version neu installieren (macht FrohLock zur Installationsquelle).
+            if (!isNewer(Guard.appVersion, m.version) && !(force && !isNewer(m.version, Guard.appVersion))) {
                 if (now - lastNoUpdateLog > 6 * 3600_000) { lastNoUpdateLog = now; Guard.audit.write("UPDATE", "Kein Update (${Guard.appVersion} aktuell)") }
                 return
             }
@@ -79,7 +96,7 @@ object Updater {
             if (hash != m.sha256) { apk.delete(); Guard.audit.write("UPDATE", "⚠ Prüfsumme falsch – verworfen"); return }
             Guard.audit.write("UPDATE", if (silent) "Installiere ${m.version} automatisch …"
                 else "${m.version} bereit – einmal am Gerät bestätigen, danach kommen Updates automatisch")
-            if (!silent) { Guard.state.lastUpdatePromptUnix = now / 1000; Guard.saveState() }
+            if (!silent && !force) { Guard.state.lastUpdatePromptUnix = now / 1000; Guard.saveState() }
             install(ctx, apk)
         } catch (e: Exception) {
             Guard.audit.write("UPDATE", "Fehler: ${e.javaClass.simpleName} ${e.message ?: ""}".trim())
@@ -142,10 +159,20 @@ class InstallResultReceiver : BroadcastReceiver() {
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 Updater.pendingConfirm = confirm
-                Reminders.notifyUpdate(ctx, confirm)
+                if (Updater.userInitiated) {
+                    // Jemand hat in der App getippt und schaut drauf → Dialog direkt öffnen.
+                    Updater.userInitiated = false
+                    try { ctx.startActivity(confirm) } catch (_: Exception) { Reminders.notifyUpdate(ctx, confirm) }
+                } else Reminders.notifyUpdate(ctx, confirm)
             }
             PackageInstaller.STATUS_SUCCESS -> { Updater.pendingConfirm = null; Guard.audit.write("UPDATE", "Installiert ✓") }
-            else -> Guard.audit.write("UPDATE", "⚠ Installation fehlgeschlagen ($status): ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""}")
+            else -> {
+                Updater.userInitiated = false
+                // Abgebrochen/abgelehnt: bald wieder anbieten statt 6 Stunden zu warten.
+                Guard.state.lastUpdatePromptUnix = System.currentTimeMillis() / 1000 - 5 * 3600 - 30 * 60
+                Guard.saveState()
+                Guard.audit.write("UPDATE", "⚠ Installation nicht abgeschlossen ($status): ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""} – neuer Versuch in 30 Min")
+            }
         }
     }
 }
