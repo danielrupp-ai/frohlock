@@ -21,12 +21,20 @@
 <div class="grid">
   <div class="card" style="text-align:center">
     {% if qr %}
-      <div class="fl-qr" data-big="qr-big">{{ qr | safe }}</div>
-      <button type="button" class="secondary" onclick="big('qr-big')" style="margin-top:10px">⛶ Groß anzeigen (zum Scannen)</button>
+      <button type="button" onclick="big('qr-big')" style="font-size:18px;padding:14px 22px;margin-bottom:12px">⛶ QR-Code groß anzeigen und scannen</button>
+      <div class="fl-qr" data-big="qr-big" onclick="big('qr-big')" style="cursor:zoom-in">{{ qr | safe }}</div>
+      <p class="muted" style="margin-top:8px">Zum Scannen immer <b>groß anzeigen</b> – klein ist der Code für die Einrichtungs-Kamera oft zu fein.</p>
+      {% if simple %}
+      <p class="muted">Einfacher QR-Code: Nach dem Scannen fragt FrohLock am Handy nach dem Kopplungscode <b>{{ code['code'] }}</b>.
+        <a href="/admin/android/qr/{{ code['code'] }}" style="color:#9ecbff">Zurück zum normalen Code</a></p>
+      {% else %}
+      <p class="muted">Klappt das Scannen trotzdem nicht? <a href="/admin/android/qr/{{ code['code'] }}?einfach=1" style="color:#9ecbff">Einfacheren QR-Code zeigen</a>
+        (gröber; den Code {{ code['code'] }} tippt ihr dann am Handy ein).</p>
+      {% endif %}
       {% if qr_dense %}<p class="muted" style="color:#ffab40">⚠ Mit WLAN-Daten ist der Code dichter. Klappt das Scannen nicht, ohne WLAN neu erstellen –
         das Handy fragt dann selbst nach dem WLAN.</p>{% endif %}
       {% if with_wifi %}<p class="muted">⚠ In diesem QR-Code steht euer WLAN-Passwort – Seite nach dem Scannen schließen.</p>{% endif %}
-      <div id="qr-big" class="fl-big" onclick="this.style.display='none'">{{ qr | safe }}<p>Antippen zum Schließen</p></div>
+      <div id="qr-big" class="fl-big" onclick="this.style.display='none'">{{ qr | safe }}<p>Bildschirm hell stellen · 20–30 cm Abstand · antippen zum Schließen</p></div>
     {% else %}
       <p style="color:#ff8a80">⚠ Der QR-Code kann noch nicht erstellt werden: Die Android-App liegt noch nicht auf dem Server.</p>
     {% endif %}
@@ -39,8 +47,8 @@
       <li><b>Sechsmal schnell</b> auf eine freie Stelle mitten auf dem Bildschirm tippen.
         <span class="muted">Samsung: auf eine leere Fläche über dem „Start“-Knopf tippen.</span></li>
       <li>Das Handy will ins <b>WLAN</b> – verbinden. Dann öffnet sich eine <b>Kamera</b>.</li>
-      <li>Hier oben <b>„Groß anzeigen“</b> tippen und den Code mit Abstand von ca. 20–30 cm scannen.
-        Hilft: Bildschirm heller, kein Spiegeln, Handy ruhig halten.</li>
+      <li>Hier <b>„QR-Code groß anzeigen“</b> tippen und mit 20–30 cm Abstand scannen.
+        Hilft: Bildschirm heller, kein Spiegeln, Handy ruhig halten. Am Laptop/PC anzeigen ist leichter als an einem zweiten Handy.</li>
       <li>„Dieses Gerät gehört eurer Organisation“ → <b>Weiter/Akzeptieren</b>. FrohLock wird geladen und koppelt sich selbst.</li>
       <li>{% if template_name %}Die Einstellungen von „{{ template_name }}“ kommen automatisch.{% else %}FrohLock fragt nach <b>Eltern-PIN</b>, Schlafenszeit und Tageslimit.{% endif %}
         Dann „Weiter mit der Handy-Einrichtung“.</li>
@@ -96,7 +104,7 @@
   .fl-qr svg { width:100%; max-width:440px; min-width:260px; height:auto; display:block; margin:0 auto; border-radius:8px; }
   .fl-qr-small svg { max-width:300px; }
   .fl-big { display:none; position:fixed; inset:0; background:#fff; z-index:50; align-items:center; justify-content:center; flex-direction:column; cursor:pointer; }
-  .fl-big svg { width:92vmin; height:92vmin; }
+  .fl-big svg { width:94vmin; height:94vmin; }
   .fl-big p { color:#333; margin:6px 0 0; font-size:14px; }
   .fl-link { background:#0b1f3a; border-radius:10px; padding:12px; font-size:17px; font-weight:700; word-break:break-all; }
   .fl-note { background:rgba(255,171,64,.12); border:1px solid rgba(255,171,64,.5); border-radius:10px; padding:10px 14px; margin-top:12px; font-size:14px; line-height:1.5; }

@@ -445,9 +445,9 @@ def android_new_form(request: Request):
     })
 
 
-def _qr_page(request: Request, code_row, wifi_ssid: str = "", wifi_password: str = ""):
+def _qr_page(request: Request, code_row, wifi_ssid: str = "", wifi_password: str = "", simple: bool = False):
     ready = _android_ready()
-    payload = android.provisioning_payload(code_row["code"], code_row["device_name"], wifi_ssid, wifi_password)
+    payload = android.provisioning_payload(code_row["code"], code_row["device_name"], wifi_ssid, wifi_password, simple=simple)
     template_name = None
     keys = code_row.keys()
     if "template_device_id" in keys and code_row["template_device_id"]:
@@ -460,7 +460,7 @@ def _qr_page(request: Request, code_row, wifi_ssid: str = "", wifi_password: str
         "qr_dense": android.qr_version(payload) > 16,
         "install_link": link, "install_qr": android.qr_svg(link) if ready["apk"] else None,
         "with_wifi": bool(wifi_ssid.strip()), "template_name": template_name,
-        "admin_component": android.ADMIN_COMPONENT, "now": int(time.time()),
+        "admin_component": android.ADMIN_COMPONENT, "now": int(time.time()), "simple": simple,
     })
 
 
@@ -491,7 +491,7 @@ def android_qr(request: Request, code: str):
     row = db.query_one("SELECT * FROM pairing_codes WHERE code=?", (code,))
     if not row:
         return RedirectResponse("/admin", status_code=303)
-    return _qr_page(request, row)
+    return _qr_page(request, row, simple=request.query_params.get("einfach") == "1")
 
 
 @router.get("/admin/android/qr/{code}/status")

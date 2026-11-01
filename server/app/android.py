@@ -85,7 +85,7 @@ def manifest_message(version: str, sha256: str) -> bytes:
 
 
 def provisioning_payload(code: str, device_name: str, wifi_ssid: str = "", wifi_password: str = "",
-                         wifi_security: str = "WPA") -> dict:
+                         wifi_security: str = "WPA", simple: bool = False) -> dict:
     """Inhalt des QR-Codes, den der Android-Einrichtungsassistent liest (6× auf den Willkommensbildschirm tippen).
 
     So KURZ wie möglich: Der QR-Leser des Einrichtungsassistenten ist einfach – ein dichter Code
@@ -102,8 +102,10 @@ def provisioning_payload(code: str, device_name: str, wifi_ssid: str = "", wifi_
         "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": cert_checksum(),
         # Ohne das schaltet Android beim „ganzes Gerät verwalten" viele vorinstallierte Apps ab (Kamera, Galerie …).
         "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": True,
-        "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": extras,
     }
+    # „Einfacher QR-Code": ohne Kopplungscode (gröber) – FrohLock fragt dann am Handy nach den 6 Ziffern.
+    if not simple:
+        payload["android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE"] = extras
     if wifi_ssid.strip():
         payload["android.app.extra.PROVISIONING_WIFI_SSID"] = wifi_ssid.strip()
         if wifi_password:

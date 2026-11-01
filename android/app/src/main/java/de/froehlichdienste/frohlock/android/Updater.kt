@@ -38,6 +38,10 @@ object Updater {
     fun tryUpdate(ctx: Context, api: ServerApi) {
         val now = System.currentTimeMillis()
         if (runningSince > 0 && now - runningSince < DEADLINE_MS + 60_000) return
+        // Ohne Geräte-Verwaltung muss ein Mensch „Installieren" tippen – höchstens alle 6 Stunden anbieten,
+        // sonst käme bei jedem Abruf (alle 30 s) ein neuer Download und Dialog.
+        val owner = DeviceOwner.isDeviceOwner(ctx)
+        if (!owner && now / 1000 - Guard.state.lastUpdatePromptUnix < 6 * 3600) return
         if (runningSince > 0) Guard.audit.write("UPDATE", "⚠ Hängendes Update nach ${(now - runningSince) / 60_000} Min aufgegeben – neuer Versuch")
         runningSince = now
         try {
@@ -56,7 +60,8 @@ object Updater {
             download(m.url, apk, now)
             val hash = sha256Hex(apk.readBytes())
             if (hash != m.sha256) { apk.delete(); Guard.audit.write("UPDATE", "⚠ Prüfsumme falsch – verworfen"); return }
-            Guard.audit.write("UPDATE", "Installiere ${m.version} …")
+            Guard.audit.write("UPDATE", if (owner) "Installiere ${m.version} …" else "${m.version} bereit – wartet auf Bestätigung am Gerät")
+            if (!owner) { Guard.state.lastUpdatePromptUnix = now / 1000; Guard.saveState() }
             install(ctx, apk)
         } catch (e: Exception) {
             Guard.audit.write("UPDATE", "Fehler: ${e.javaClass.simpleName} ${e.message ?: ""}".trim())
@@ -111,12 +116,12 @@ class InstallResultReceiver : BroadcastReceiver() {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                // Ohne Geräte-Verwaltung muss jemand „Aktualisieren" tippen.
-                Guard.audit.write("UPDATE", "Wartet auf Bestätigung am Gerät")
+                // Ohne Geräte-Verwaltung muss jemand „Aktualisieren" tippen. Nicht mitten ins Spiel springen:
+                // nur eine Benachrichtigung, die Eltern antippen, wenn es passt.
                 @Suppress("DEPRECATION")
-                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                try { if (confirm != null) ctx.startActivity(confirm) } catch (_: Exception) { }
+                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
+                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                Reminders.notifyUpdate(ctx, confirm)
             }
             PackageInstaller.STATUS_SUCCESS -> Guard.audit.write("UPDATE", "Installiert ✓")
             else -> Guard.audit.write("UPDATE", "⚠ Installation fehlgeschlagen ($status): ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""}")

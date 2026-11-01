@@ -414,3 +414,18 @@ def test_android_qr_is_compact_and_install_link_page(client, tmp_path, monkeypat
     assert "gibt es nicht" in client.get("/i/000000").text or code == "000000"
     client.post("/devices/register", json={"pairingCode": code, "deviceName": "x", "platform": "android"})
     assert "schon benutzt" in client.get(f"/i/{code}").text
+
+
+def test_android_simple_qr_has_no_code(client, tmp_path, monkeypatch):
+    import app.db as dbmod
+    from app import android
+    _admin_login(client)
+    monkeypatch.setattr(settings, "download_dir", str(tmp_path))
+    (tmp_path / "FrohLock.apk").write_bytes(b"PK")
+    (tmp_path / "android-cert.txt").write_text("abc")
+    p = android.provisioning_payload("123456", "x", simple=True)
+    assert "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE" not in p
+    client.post("/admin/android/new", data={"device_name": "Handy"})
+    code = dbmod.query_one("SELECT code FROM pairing_codes")["code"]
+    r = client.get(f"/admin/android/qr/{code}?einfach=1")
+    assert "Einfacher QR-Code" in r.text and "Zurück zum normalen Code" in r.text

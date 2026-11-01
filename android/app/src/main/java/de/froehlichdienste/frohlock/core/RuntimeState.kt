@@ -33,6 +33,8 @@ class RuntimeState {
     val suspendedPackages = mutableListOf<String>()
     /** Bereits verschickte Schlafenszeit-Erinnerungen („2026-11-01 21:00 -10"). */
     var lastReminderKey = ""
+    /** Einfacher Modus: wann zuletzt „Update bereit" angeboten wurde (nicht ständig nerven). */
+    var lastUpdatePromptUnix = 0L
 
     fun markCommandExecuted(id: String): Boolean {
         if (id.isEmpty()) return true
@@ -85,6 +87,7 @@ class RuntimeState {
         .put("relaxedUntilUnix", relaxedUntilUnix)
         .put("suspendedPackages", JSONArray(suspendedPackages))
         .put("lastReminderKey", lastReminderKey)
+        .put("lastUpdatePromptUnix", lastUpdatePromptUnix)
 
     companion object {
         fun fromJson(o: JSONObject): RuntimeState = RuntimeState().apply {
@@ -108,6 +111,7 @@ class RuntimeState {
             relaxedUntilUnix = o.optLong("relaxedUntilUnix")
             o.optJSONArray("suspendedPackages")?.let { a -> for (i in 0 until a.length()) suspendedPackages.add(a.optString(i)) }
             lastReminderKey = o.optString("lastReminderKey", "")
+            lastUpdatePromptUnix = o.optLong("lastUpdatePromptUnix")
         }
     }
 }

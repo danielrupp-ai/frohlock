@@ -110,6 +110,17 @@ object Reminders {
         notify(ctx, 2, "Gleich ist Pause", text)
     }
 
+    fun notifyUpdate(ctx: Context, confirm: Intent) {
+        ensureChannel(ctx)
+        val pi = PendingIntent.getActivity(ctx, 4, confirm, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val text = "Neue FrohLock-Version bereit. Für Mama oder Papa: antippen und „Installieren“ wählen. " +
+            "Beim ersten Mal „Aus dieser Quelle zulassen“ erlauben."
+        val n = Notification.Builder(ctx, CH).setSmallIcon(R.drawable.ic_stat_lock)
+            .setContentTitle("FrohLock-Update").setContentText(text).setStyle(Notification.BigTextStyle().bigText(text))
+            .setAutoCancel(true).setContentIntent(pi).build()
+        try { ctx.getSystemService(NotificationManager::class.java).notify(4, n) } catch (_: Exception) { }
+    }
+
     fun notifyRemoved(ctx: Context) {
         ensureChannel(ctx)
         notify(ctx, 3, "FrohLock wurde freigegeben", "Alle Sperren sind aufgehoben. Die App kann jetzt normal deinstalliert werden.")
