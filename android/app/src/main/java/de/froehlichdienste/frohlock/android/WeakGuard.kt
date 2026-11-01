@@ -43,6 +43,7 @@ object WeakGuard {
         if (!canOverlay(ctx)) add("Über anderen Apps einblenden")
         if (!isAdminActive(ctx)) add("Geräteadministrator")
         if (!ForegroundApp.hasAccess(ctx)) add("Nutzungsdaten (welche App offen ist)")
+        if (!ctx.packageManager.canRequestPackageInstalls()) add("Updates installieren")
         if (!notificationsAllowed(ctx)) add("Benachrichtigungen")
     }
 

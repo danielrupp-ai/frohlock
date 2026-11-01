@@ -68,8 +68,13 @@ Bereitstellen auf dem Server (kein Container-Neustart nötig):
 bash ~/apps/frohlock/repo/deploy/update-download.sh android X.Y.Z
 ```
 
-Danach bekommen alle Android-Geräte das Update beim nächsten Kontakt **still** (Geräte-Verwalter
-installiert ohne Rückfrage). Manifest-Signatur: `android|Version|SHA-256` mit dem Server-Schlüssel.
+Danach bekommen alle Android-Geräte das Update beim nächsten Kontakt **still**:
+- Weg 1 (Geräte-Verwalter): immer ohne Rückfrage.
+- Weg 2 (Link): ab Android 12 ebenfalls ohne Rückfrage, sobald FrohLock selbst die Installationsquelle
+  ist. Nach der Installation über den Browser ist das noch nicht so → das **erste** Update einmal
+  bestätigen (Benachrichtigung „FrohLock-Update“ bzw. Knopf in der App), danach automatisch.
+  Voraussetzung: FrohLock darf Apps installieren („Aus dieser Quelle zulassen“). Admin zeigt
+  „Updates: ✓ automatisch“. Ab Android 14 beansprucht FrohLock die Update-Hoheit. Manifest-Signatur: `android|Version|SHA-256` mit dem Server-Schlüssel.
 
 ## ⚠ Signierschlüssel (nie verlieren)
 

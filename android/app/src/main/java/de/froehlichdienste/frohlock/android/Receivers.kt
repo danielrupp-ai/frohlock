@@ -75,8 +75,11 @@ object Provisioning {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         Guard.init(ctx)
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED)
-            Guard.audit.write("UPDATE", "Neue Version ${Guard.appVersion} läuft")
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            Guard.audit.write("UPDATE", "Neue Version ${Guard.appVersion} läuft" +
+                if (Updater.canUpdateSilently(ctx)) " – künftige Updates automatisch" else "")
+            try { ctx.getSystemService(NotificationManager::class.java).cancel(4) } catch (_: Exception) { }
+        }
         if (Guard.pairing() != null || DeviceOwner.isDeviceOwner(ctx)) GuardService.start(ctx)
     }
 }
@@ -113,8 +116,8 @@ object Reminders {
     fun notifyUpdate(ctx: Context, confirm: Intent) {
         ensureChannel(ctx)
         val pi = PendingIntent.getActivity(ctx, 4, confirm, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val text = "Neue FrohLock-Version bereit. Für Mama oder Papa: antippen und „Installieren“ wählen. " +
-            "Beim ersten Mal „Aus dieser Quelle zulassen“ erlauben."
+        val text = "Neue FrohLock-Version bereit: antippen und „Aktualisieren“ wählen. Das ist nur EINMAL nötig – " +
+            "danach aktualisiert sich FrohLock von selbst."
         val n = Notification.Builder(ctx, CH).setSmallIcon(R.drawable.ic_stat_lock)
             .setContentTitle("FrohLock-Update").setContentText(text).setStyle(Notification.BigTextStyle().bigText(text))
             .setAutoCancel(true).setContentIntent(pi).build()

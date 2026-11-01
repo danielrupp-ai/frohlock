@@ -41,6 +41,9 @@
     {% if android_info.get("model") %}<tr><td>Gerät</td><td>{{ android_info.get("model") }} · {{ android_info.get("android", "") }}</td></tr>{% endif %}
     <tr><td>App-Version</td><td>{{ dev["app_version"] or "–" }}{% if android_update %} <span class="muted">(bereitgestellt: {{ android_update }}{% if dev["app_version"] and dev["app_version"] != android_update %} – Update kommt von selbst{% endif %})</span>{% endif %}</td></tr>
     {% if dev["device_owner"] == 0 %}
+    <tr><td>Updates</td><td>{% if android_info.get("autoUpdate") %}<span style="color:#69f0ae">✓ automatisch</span>
+      {% else %}<span style="color:#ffab40">⚠ einmal am Handy bestätigen</span> <span class="muted">(Benachrichtigung „FrohLock-Update“ antippen
+      oder FrohLock öffnen → „Neue FrohLock-Version installieren“) – danach automatisch</span>{% endif %}</td></tr>
     <tr><td>Erkennt offene App (Nutzungsdaten)</td><td>{% if android_info.get("usageAccess") %}<span style="color:#69f0ae">✓ ja</span>
       {% else %}<span style="color:#ff8a80">⚠ nein – Telegram/Signal in der Sperre gehen dann nicht, und Umgehungen werden später erkannt</span>{% endif %}</td></tr>
     {% endif %}

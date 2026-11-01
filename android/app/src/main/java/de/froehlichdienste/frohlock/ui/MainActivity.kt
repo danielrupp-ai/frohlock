@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var calc: TextView
     private lateinit var schedule: TextView
     private lateinit var left: TextView
+    private lateinit var updateButton: android.widget.Button
 
     private val refresher = object : Runnable { override fun run() { refresh(); ui.postDelayed(this, 5000) } }
 
@@ -56,6 +57,10 @@ class MainActivity : Activity() {
         schedule = Ui.text(this, "", 15f, 0xDDFFFFFF.toInt()).also { card.addView(it) }
         col.addView(card)
 
+        updateButton = Ui.button(this, "⬆️  Neue FrohLock-Version installieren") {
+            de.froehlichdienste.frohlock.android.Updater.pendingConfirm?.let { i -> try { startActivity(i) } catch (_: Exception) { } }
+        }
+        col.addView(updateButton)
         col.addView(Ui.button(this, "🔑  Eltern-Bereich", primary = false) {
             startActivity(Intent(this, ParentActivity::class.java))
         })
@@ -70,6 +75,7 @@ class MainActivity : Activity() {
     private fun refresh() {
         val e = Guard.enforcer
         setupBanner.visibility = if (e.isConfigured) View.GONE else View.VISIBLE
+        updateButton.visibility = if (de.froehlichdienste.frohlock.android.Updater.pendingConfirm != null) View.VISIBLE else View.GONE
         val d = e.decide()
         state.text = when {
             !e.isConfigured -> "Noch nicht eingerichtet"

@@ -25,6 +25,23 @@ object Updater {
     @Volatile private var runningSince = 0L
     @Volatile private var lastNoUpdateLog = 0L
 
+    /** Zuletzt angebotene, noch nicht bestätigte Installation (für den Knopf „Update installieren"). */
+    @Volatile var pendingConfirm: Intent? = null
+
+    /** Wer hat FrohLock installiert? Nur wenn FrohLock selbst die Quelle ist, darf es sich still aktualisieren. */
+    fun installerOfRecord(ctx: Context): String? = try {
+        if (Build.VERSION.SDK_INT >= 30) ctx.packageManager.getInstallSourceInfo(ctx.packageName).installingPackageName
+        else @Suppress("DEPRECATION") ctx.packageManager.getInstallerPackageName(ctx.packageName)
+    } catch (_: Exception) { null }
+
+    /**
+     * Klappt das nächste Update ohne Rückfrage? Ja, als Geräte-Verwalter – oder ab Android 12, wenn FrohLock
+     * selbst die Installationsquelle ist (nach dem ersten bestätigten Update) und Apps installieren darf.
+     */
+    fun canUpdateSilently(ctx: Context): Boolean =
+        DeviceOwner.isDeviceOwner(ctx) || (Build.VERSION.SDK_INT >= 31 &&
+            installerOfRecord(ctx) == ctx.packageName && ctx.packageManager.canRequestPackageInstalls())
+
     fun isNewer(current: String, target: String): Boolean {
         fun parts(v: String) = v.split(".").map { it.toIntOrNull() ?: 0 }.let { it + List(maxOf(0, 3 - it.size)) { 0 } }
         val a = parts(current); val b = parts(target)
@@ -40,8 +57,8 @@ object Updater {
         if (runningSince > 0 && now - runningSince < DEADLINE_MS + 60_000) return
         // Ohne Geräte-Verwaltung muss ein Mensch „Installieren" tippen – höchstens alle 6 Stunden anbieten,
         // sonst käme bei jedem Abruf (alle 30 s) ein neuer Download und Dialog.
-        val owner = DeviceOwner.isDeviceOwner(ctx)
-        if (!owner && now / 1000 - Guard.state.lastUpdatePromptUnix < 6 * 3600) return
+        val silent = canUpdateSilently(ctx)
+        if (!silent && now / 1000 - Guard.state.lastUpdatePromptUnix < 6 * 3600) return
         if (runningSince > 0) Guard.audit.write("UPDATE", "⚠ Hängendes Update nach ${(now - runningSince) / 60_000} Min aufgegeben – neuer Versuch")
         runningSince = now
         try {
@@ -60,8 +77,9 @@ object Updater {
             download(m.url, apk, now)
             val hash = sha256Hex(apk.readBytes())
             if (hash != m.sha256) { apk.delete(); Guard.audit.write("UPDATE", "⚠ Prüfsumme falsch – verworfen"); return }
-            Guard.audit.write("UPDATE", if (owner) "Installiere ${m.version} …" else "${m.version} bereit – wartet auf Bestätigung am Gerät")
-            if (!owner) { Guard.state.lastUpdatePromptUnix = now / 1000; Guard.saveState() }
+            Guard.audit.write("UPDATE", if (silent) "Installiere ${m.version} automatisch …"
+                else "${m.version} bereit – einmal am Gerät bestätigen, danach kommen Updates automatisch")
+            if (!silent) { Guard.state.lastUpdatePromptUnix = now / 1000; Guard.saveState() }
             install(ctx, apk)
         } catch (e: Exception) {
             Guard.audit.write("UPDATE", "Fehler: ${e.javaClass.simpleName} ${e.message ?: ""}".trim())
@@ -100,6 +118,8 @@ object Updater {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(ctx.packageName)
         if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        // Ab Android 14: Update-Hoheit beanspruchen – künftige Updates nur noch über FrohLock selbst.
+        if (Build.VERSION.SDK_INT >= 34) params.setRequestUpdateOwnership(true)
         val id = installer.createSession(params)
         installer.openSession(id).use { s ->
             s.openWrite("frohlock.apk", 0, apk.length()).use { out -> apk.inputStream().use { it.copyTo(out) }; s.fsync(out) }
@@ -121,9 +141,10 @@ class InstallResultReceiver : BroadcastReceiver() {
                 @Suppress("DEPRECATION")
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                Updater.pendingConfirm = confirm
                 Reminders.notifyUpdate(ctx, confirm)
             }
-            PackageInstaller.STATUS_SUCCESS -> Guard.audit.write("UPDATE", "Installiert ✓")
+            PackageInstaller.STATUS_SUCCESS -> { Updater.pendingConfirm = null; Guard.audit.write("UPDATE", "Installiert ✓") }
             else -> Guard.audit.write("UPDATE", "⚠ Installation fehlgeschlagen ($status): ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""}")
         }
     }

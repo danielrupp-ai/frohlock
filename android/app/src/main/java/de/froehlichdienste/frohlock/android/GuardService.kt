@@ -369,6 +369,8 @@ class GuardService : Service() {
                     .put("overlay", WeakGuard.canOverlay(ctx))
                     .put("deviceAdmin", WeakGuard.isAdminActive(ctx))
                     .put("usageAccess", ForegroundApp.hasAccess(ctx))
+                    .put("autoUpdate", Updater.canUpdateSilently(ctx))
+                    .put("installer", Updater.installerOfRecord(ctx) ?: "")
                     .put("allowedApps", org.json.JSONArray(AllowedApps.installedMessengers(ctx).map { it.second }))
                     .put("missing", org.json.JSONArray(if (DeviceOwner.isDeviceOwner(ctx)) emptyList() else WeakGuard.missing(ctx))))
                 .put("relaxedUntilUnix", Guard.state.relaxedUntilUnix)

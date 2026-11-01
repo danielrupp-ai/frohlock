@@ -252,6 +252,10 @@ class SetupActivity : Activity() {
             "wieder gesperrt. In der Liste FrohLock antippen und „Zugriff auf Nutzungsdaten“ einschalten.") {
             try { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) } catch (_: Exception) { openAppInfo() }
         }
+        item(packageManager.canRequestPackageInstalls(), "Updates installieren",
+            "Damit sich FrohLock selbst aktualisieren kann. „Aus dieser Quelle zulassen“ einschalten.") {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (_: Exception) { openAppInfo() }
+        }
         item(WeakGuard.notificationsAllowed(this), "Benachrichtigungen",
             "Für die freundliche Erinnerung kurz vor der Schlafenszeit.") {
             if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
