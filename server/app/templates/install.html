@@ -31,6 +31,13 @@
   {% if state == "ok" %}
   <p class="sub">Für „{{ name }}“. Diese Seite bitte <b>auf dem Kinder-Handy</b> öffnen.</p>
 
+  <div class="warn" style="margin-bottom:6px">
+    <b>Läuft auf dem Handy Google Family Link?</b> Dann blockiert Family Link die Installation („Frag deine Eltern“).
+    Freigeben auf dem <b>Eltern-Handy</b>: Family Link öffnen → Kind antippen → ganz nach unten zu <b>„Angemeldete Geräte“</b>
+    (bzw. „Geräte“) → dieses Handy antippen → <b>„Apps aus unbekannten Quellen“</b> einschalten.
+    Ohne Eltern-Handy: im Browser <b>g.co/yourfamily</b> öffnen, gleicher Weg. Danach hier weitermachen.
+  </div>
+
   <div class="step">
     <h2><span class="num">1</span>App herunterladen</h2>
     {% if available %}

@@ -21,6 +21,13 @@ Die QR-Seite meldet von selbst „✅ Das Gerät hat sich gemeldet“.
 dann in FrohLock „Einrichtung abschließen“ mit Kopplungscode. Ohne Device Owner läuft FrohLock nur
 im schwachen Modus (Admin zeigt „⚠ ohne Geräte-Verwaltung“).
 
+## Google Family Link
+
+Ist das Kinder-Handy mit Family Link beaufsichtigt, blockiert Family Link die Installation der APK
+(„Frag deine Eltern“). Freigabe auf dem Eltern-Handy: Family Link → Kind → **Angemeldete Geräte** →
+Gerät → **Apps aus unbekannten Quellen** einschalten (oder im Browser über g.co/yourfamily).
+Danach Weg 2 (Link) normal. Weg 1 (QR, Device Owner) und Family-Link-Aufsicht schließen sich aus.
+
 ## Was gesperrt wird
 
 | Wann | Was passiert |
