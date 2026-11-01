@@ -36,6 +36,17 @@ Danach Weg 2 (Link) normal. Weg 1 (QR, Device Owner) und Family-Link-Aufsicht sc
 | Immer | FrohLock nicht deinstallierbar, nicht „Beenden erzwingen“/„Daten löschen“; Uhrzeit automatisch und nicht verstellbar; kein abgesicherter Modus; kein Zurücksetzen über die Einstellungen; keine Entwickleroptionen/kein USB-Debugging; keine Apps aus Dateien (Play Store geht); keine weiteren Nutzer/Arbeitsprofile. |
 | Eltern-Bereich (PIN) → „Einstellungen 15 Min freigeben“ | Hebt die „Immer“-Sperren außer dem Löschschutz für 15 Minuten auf, danach automatisch wieder an. |
 
+**Immer erlaubt** (auch in jeder Sperre): Telegram und Signal (Standard, im Admin je Gerät unter
+„Immer erlaubt“ änderbar: WhatsApp, Threema, eigene Paketnamen), dazu Telefon und Wecker. Auf dem
+Sperrbildschirm gibt es dafür Knöpfe („Telegram öffnen“).
+
+**Einfacher Schutz (Weg 2, ohne Zurücksetzen)** braucht: Über anderen Apps einblenden,
+Geräteadministrator und **Nutzungsdaten** (erkennt die App im Vordergrund). Ablauf in der Sperre:
+erlaubte App vorne → in Ruhe lassen; alles andere → Vollbild-Overlay + Sperrbildschirm sofort zurück
+(Takt 1,5 s); bleibt das Kind > 12 s woanders → Bildschirm aus (`lockNow`). Wegwischen aus der
+Übersicht: Dienst läuft weiter, Wächter-Wecker startet ihn jede Minute neu, falls das System ihn
+beendet. Die Auszeit läuft nur, solange der Sperrbildschirm sichtbar ist.
+
 Bildschirmzeit zählt nur bei **Bildschirm an und entsperrt** (wie „Bildschirm an“ am Laptop).
 
 ## Freigeben

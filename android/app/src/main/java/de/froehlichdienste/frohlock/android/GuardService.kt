@@ -18,6 +18,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import de.froehlichdienste.frohlock.BuildConfig
 import de.froehlichdienste.frohlock.R
 import de.froehlichdienste.frohlock.ui.LockActivity
 import de.froehlichdienste.frohlock.ui.MainActivity
@@ -193,7 +194,11 @@ class GuardService : Service() {
         val now = SystemClock.uptimeMillis()
         if (LockActivity.isResumed) { WeakGuard.setOverlay(this, false); outsideSince = 0; return true }
         val fg = ForegroundApp.current(this)
-        val inAllowed = fg != null && fg in AllowedApps.packages(this)
+        // Eigene App zählt NICHT als erlaubt: außer dem Sperrbildschirm hat FrohLock in der Sperre nichts vorne zu suchen
+        // (und direkt nach dem Wegwischen meldet Android kurz noch FrohLock als vorderste App).
+        val inAllowed = (fg != null && fg != packageName && fg in AllowedApps.packages(this)) ||
+            now < AllowedApps.launchGraceUntilUptime
+        if (BuildConfig.ALLOW_DEBUGGING) android.util.Log.i("FrohLock", "weak fg=$fg allowed=$inAllowed resumed=${LockActivity.isResumed}")
         // Ohne Nutzungsdaten weiß FrohLock nicht, was vorne ist: dann nur echte Telefonate und die
         // ersten 60 s nach „Anrufen" frei lassen – Messenger brauchen die Nutzungsdaten-Erlaubnis.
         val free = inAllowed || (fg == null && (CallState.busy(this) || now < LockActivity.callGraceUntilUptime))

@@ -53,8 +53,12 @@ object AllowedApps {
         }
     }
 
+    /** Kurz nach „Telegram öffnen" nicht dazwischenfunken (Android meldet den Wechsel mit kleiner Verzögerung). */
+    @Volatile var launchGraceUntilUptime = 0L
+
     fun launch(ctx: Context, pkg: String): Boolean = try {
         val i = ctx.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        launchGraceUntilUptime = SystemClock.uptimeMillis() + 4_000
         ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         true
     } catch (_: Exception) { false }
