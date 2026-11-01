@@ -12,6 +12,7 @@ val appVersion: String = (findProperty("frohlockVersion") as String?)?.removePre
 val appVersionCode: Int = appVersion.split(".").map { it.toIntOrNull() ?: 0 }
     .let { (it + listOf(0, 0, 0)).take(3) }
     .let { (a, b, c) -> a * 10000 + b * 100 + c }
+    .coerceAtLeast(1)   // Android verlangt > 0 (CI ohne Tag baut 0.0.0)
 
 android {
     namespace = "de.froehlichdienste.frohlock"
