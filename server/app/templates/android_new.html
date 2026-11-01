@@ -2,11 +2,12 @@
 {% block content %}
 <div class="card">
   <h1>📱 Android-Handy oder -Tablet einrichten</h1>
-  <p>Ihr bekommt gleich einen <b>QR-Code</b>. Damit richtet sich das Kinder-Handy selbst ein: Es lädt FrohLock herunter,
-    macht FrohLock zum <b>Geräte-Verwalter</b> (dann kann das Kind die App weder löschen noch beenden) und meldet sich hier an.</p>
+  <p>Ihr bekommt gleich einen <b>QR-Code</b> und einen <b>Installations-Link</b>. Darüber kommt FrohLock aufs Kinder-Handy und meldet sich hier an.</p>
   <div class="fl-warn">
-    <b>Wichtig vorab:</b> Das geht nur bei einem Handy, das gerade <b>neu ist oder auf Werkseinstellungen zurückgesetzt</b> wurde.
-    Fotos, Chats und Spielstände vorher sichern (z. B. Google-Konto-Sicherung, WhatsApp-Backup).
+    <b>Zwei Wege, ihr wählt auf der nächsten Seite:</b><br>
+    <b>Weg 1 – QR-Code beim Einrichten (empfohlen):</b> voller Schutz, aber nur bei einem Handy, das <b>neu oder auf Werkseinstellungen zurückgesetzt</b> ist
+    (Fotos, Chats, Spielstände vorher sichern).<br>
+    <b>Weg 2 – Link öffnen und installieren:</b> ohne Zurücksetzen, sofort machbar, aber ein geschicktes Kind kann FrohLock abschalten.
   </div>
   {% if not ready.apk or not ready.cert %}
   <div class="fl-warn" style="border-color:#ff5252">
@@ -34,15 +35,15 @@
     {% endfor %}
   </div>
 
-  <h2 style="margin-top:18px">3. WLAN gleich mitgeben? <span class="muted" style="font-weight:400">(freiwillig)</span></h2>
-  <p class="muted" style="margin:0 0 8px">Dann verbindet sich das Handy beim Scannen selbst mit eurem WLAN. Das Passwort steht nur im QR-Code
-    und wird nirgends gespeichert. Leer lassen = ihr wählt das WLAN am Handy selbst aus.</p>
+  <h2 style="margin-top:18px">3. WLAN gleich mitgeben? <span class="muted" style="font-weight:400">(freiwillig, nur Weg 1)</span></h2>
+  <p class="muted" style="margin:0 0 8px">Meist <b>leer lassen</b>: Das Handy fragt beim Einrichten ohnehin nach dem WLAN, und ohne WLAN-Daten
+    ist der QR-Code gröber und leichter zu scannen. Das Passwort würde nur im QR-Code stehen, nirgends gespeichert.</p>
   <div class="row">
     <input name="wifi_ssid" placeholder="WLAN-Name" autocomplete="off">
     <input name="wifi_password" placeholder="WLAN-Passwort" type="password" autocomplete="new-password">
   </div>
 
-  <button style="margin-top:18px;font-size:16px;padding:12px 20px" type="submit">QR-Code erstellen</button>
+  <button style="margin-top:18px;font-size:16px;padding:12px 20px" type="submit">Weiter zu QR-Code und Link</button>
 </form>
 
 <style>

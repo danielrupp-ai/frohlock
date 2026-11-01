@@ -10,6 +10,8 @@ from .config import settings
 APK_NAME = "FrohLock.apk"
 PACKAGE = "de.froehlichdienste.frohlock"
 ADMIN_COMPONENT = f"{PACKAGE}/{PACKAGE}.android.AdminReceiver"
+# Kurzform für den QR-Code (Android ergänzt das Paket vor dem Punkt) – jedes Zeichen macht den Code dichter.
+ADMIN_COMPONENT_SHORT = f"{PACKAGE}/.android.AdminReceiver"
 
 _sha_cache: dict[str, tuple[float, int, str]] = {}
 
@@ -59,6 +61,16 @@ def download_url() -> str:
     return settings.public_base_url.rstrip("/") + "/download/android"
 
 
+def short_download_url() -> str:
+    """Kurzer APK-Link für den QR-Code (gleiche Datei wie /download/android)."""
+    return settings.public_base_url.rstrip("/") + "/apk"
+
+
+def install_link(code: str) -> str:
+    """Link für den Weg ohne Zurücksetzen: Seite mit Download + „Jetzt koppeln“."""
+    return settings.public_base_url.rstrip("/") + f"/i/{code}"
+
+
 def update_target() -> tuple[str, str, str] | None:
     """(Version, URL, SHA-256) des aktuellen Android-Updates oder None."""
     ver, sha = apk_version(), apk_sha256()
@@ -74,19 +86,23 @@ def manifest_message(version: str, sha256: str) -> bytes:
 
 def provisioning_payload(code: str, device_name: str, wifi_ssid: str = "", wifi_password: str = "",
                          wifi_security: str = "WPA") -> dict:
-    """Inhalt des QR-Codes, den der Android-Einrichtungsassistent liest (6× auf den Willkommensbildschirm tippen)."""
+    """Inhalt des QR-Codes, den der Android-Einrichtungsassistent liest (6× auf den Willkommensbildschirm tippen).
+
+    So KURZ wie möglich: Der QR-Leser des Einrichtungsassistenten ist einfach – ein dichter Code
+    (früher ~715 Zeichen, 105×105 Punkte) ließ sich vom Bildschirm nicht scannen. Gerätename und
+    Server kommen ohnehin vom Server bzw. sind in der App vorbelegt; nur der Kopplungscode zählt.
+    """
+    extras: dict = {"pairingCode": code}
+    base = settings.public_base_url.rstrip("/")
+    if base != "https://frohlock.froehlichdienste.de":
+        extras["serverUrl"] = base
     payload: dict = {
-        "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": ADMIN_COMPONENT,
-        "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": download_url(),
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": ADMIN_COMPONENT_SHORT,
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": short_download_url(),
         "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": cert_checksum(),
+        # Ohne das schaltet Android beim „ganzes Gerät verwalten" viele vorinstallierte Apps ab (Kamera, Galerie …).
         "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": True,
-        "android.app.extra.PROVISIONING_LOCALE": "de_DE",
-        "android.app.extra.PROVISIONING_TIME_ZONE": "Europe/Berlin",
-        "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": {
-            "pairingCode": code,
-            "serverUrl": settings.public_base_url.rstrip("/"),
-            "deviceName": device_name,
-        },
+        "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": extras,
     }
     if wifi_ssid.strip():
         payload["android.app.extra.PROVISIONING_WIFI_SSID"] = wifi_ssid.strip()
@@ -98,11 +114,18 @@ def provisioning_payload(code: str, device_name: str, wifi_ssid: str = "", wifi_
     return payload
 
 
-def qr_svg(payload: dict) -> str:
+def qr_svg(payload) -> str:
+    """Schwarz auf Weiß, niedrige Fehlerkorrektur (Bildschirm-Scan braucht keine) = möglichst grobe Punkte.
+    Größe steuert das CSS (viewBox), damit der Code auf jedem Bildschirm groß erscheint."""
     import segno
-    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    qr = segno.make(data, error="m")
-    return qr.svg_inline(scale=5, dark="#0b1f3a", light="#ffffff", border=3)
+    data = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    qr = segno.make(data, error="l", boost_error=False)
+    return qr.svg_inline(scale=10, dark="#000000", light="#ffffff", border=4, omitsize=True)
+
+
+def qr_version(payload: dict) -> int:
+    import segno
+    return segno.make(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), error="l", boost_error=False).version
 
 
 def device_info(raw) -> dict:

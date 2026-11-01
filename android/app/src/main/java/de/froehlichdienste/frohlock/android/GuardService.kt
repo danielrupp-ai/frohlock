@@ -64,7 +64,13 @@ class GuardService : Service() {
         handler.post {
             detectGap()
             DeviceOwner.applyBaseline(this, relaxed = isRelaxed())
-            Guard.audit.write("DIENST", "Gestartet (v${Guard.appVersion}, Geräte-Verwaltung ${if (DeviceOwner.isDeviceOwner(this)) "aktiv" else "FEHLT"})")
+            val owner = DeviceOwner.isDeviceOwner(this)
+            Guard.audit.write("DIENST", "Gestartet (v${Guard.appVersion}, " +
+                (if (owner) "Geräte-Verwaltung aktiv)" else "einfacher Schutz ohne Geräte-Verwaltung)"))
+            if (!owner && Guard.enforcer.isConfigured) {
+                val miss = WeakGuard.missing(this)
+                if (miss.isNotEmpty()) Guard.audit.write("UMGEHUNG", "⚠ Einfacher Schutz – es fehlt: ${miss.joinToString(", ")}")
+            }
             loop()
         }
         net.scheduleWithFixedDelay({ netRound(force = false) }, 2, 10, TimeUnit.SECONDS)
@@ -89,8 +95,12 @@ class GuardService : Service() {
 
     private fun loop() {
         try { tick() } catch (e: Exception) { Guard.audit.write("DIENST", "Takt-Fehler: ${e.javaClass.simpleName} ${e.message}") }
-        handler.postDelayed({ loop() }, 5_000)
+        // Einfacher Modus (ohne Geräte-Verwaltung) während einer Sperre: schneller nachsehen, ob das Kind weggewechselt hat.
+        val fast = !DeviceOwner.isDeviceOwner(this) && lastLocked
+        handler.postDelayed({ loop() }, if (fast) 1_500 else 5_000)
     }
+
+    @Volatile private var lastLocked = false
 
     private fun screenOn(): Boolean {
         val pm = getSystemService(PowerManager::class.java)
@@ -111,12 +121,22 @@ class GuardService : Service() {
         val d = e.decide()
         // Während der Handy-Einrichtung (Setup-Assistent, FrohLock-Einrichtung) nie dazwischenfunken.
         val settingUp = !userSetupComplete() || SetupActivity.isActive
+        val owner = DeviceOwner.isDeviceOwner(this)
+        lastLocked = d.locked && !settingUp
         if (d.locked && !settingUp) {
             DeviceOwner.suspendApps(this, true)
+            if (!owner) {
+                // Overlay deckt jede App ab, solange der Sperrbildschirm nicht vorne ist (nicht während eines Anrufs).
+                val inCall = SystemClock.uptimeMillis() < LockActivity.callGraceUntilUptime
+                WeakGuard.setOverlay(this, !LockActivity.isResumed && !inCall)
+            }
             if (on) ensureLockScreen()
-        } else if (!d.locked) {
-            DeviceOwner.suspendApps(this, false)
-            if (on && dt > 0) e.accrueUsage(dt)
+        } else {
+            if (!owner) WeakGuard.setOverlay(this, false)
+            if (!d.locked) {
+                DeviceOwner.suspendApps(this, false)
+                if (on && dt > 0) e.accrueUsage(dt)
+            }
         }
         if (dt > 0) e.tickPenalty(dt, on)
 
@@ -150,7 +170,9 @@ class GuardService : Service() {
             } catch (_: Exception) { }
         }
         val hiddenFor = now - LockActivity.lastVisibleUptime
-        if (LockActivity.lastVisibleUptime > 0 && hiddenFor > 20_000 && now - lastBypassAudit > 120_000) {
+        // Im einfachen Modus ist „weggewechselt" normal (das Overlay deckt ab) – nur melden, wenn auch das fehlt.
+        val covered = !DeviceOwner.isDeviceOwner(this) && WeakGuard.canOverlay(this)
+        if (!covered && LockActivity.lastVisibleUptime > 0 && hiddenFor > 20_000 && now - lastBypassAudit > 120_000) {
             lastBypassAudit = now
             Guard.audit.write("UMGEHUNG", "⚠ Gesperrt, aber Sperrbildschirm seit ${hiddenFor / 1000} s nicht im Vordergrund" +
                 if (!DeviceOwner.isDeviceOwner(this)) " (Geräte-Verwaltung fehlt!)" else "")
@@ -249,6 +271,8 @@ class GuardService : Service() {
         const val ACTION_POKE = "poke"
         const val ACTION_SYNC = "sync"
         @Volatile var instance: GuardService? = null; private set
+        /** Eltern geben FrohLock gerade frei – Abschalten des Geräteadministrators ist dann gewollt. */
+        @Volatile var releasing = false; private set
 
         fun start(ctx: Context) {
             try {
@@ -281,14 +305,22 @@ class GuardService : Service() {
                 .put("platform", "android")
                 .put("deviceOwner", DeviceOwner.isDeviceOwner(ctx))
                 .put("lockTaskActive", DeviceOwner.lockTaskActive(ctx))
-                .put("deviceInfo", Sync.deviceInfo(ctx))
+                .put("deviceInfo", Sync.deviceInfo(ctx)
+                    .put("overlay", WeakGuard.canOverlay(ctx))
+                    .put("deviceAdmin", WeakGuard.isAdminActive(ctx))
+                    .put("missing", org.json.JSONArray(if (DeviceOwner.isDeviceOwner(ctx)) emptyList() else WeakGuard.missing(ctx))))
                 .put("relaxedUntilUnix", Guard.state.relaxedUntilUnix)
         }
 
         /** Alles freigeben und FrohLock zum Entfernen vorbereiten (Eltern-PIN oder Admin-Befehl). */
         fun releaseDevice(ctx: Context, reason: String) {
+            releasing = true
             Guard.audit.write("UNINSTALL", "Freigabe: $reason")
             DeviceOwner.release(ctx)
+            WeakGuard.setOverlay(ctx, false)
+            try {
+                ctx.getSystemService(android.app.admin.DevicePolicyManager::class.java).removeActiveAdmin(DeviceOwner.admin(ctx))
+            } catch (_: Exception) { }
             Guard.clearAll()
             LockActivity.finishAll()
             Reminders.notifyRemoved(ctx)

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>FrohLock installieren</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#F4F7FF;
+      background:linear-gradient(180deg,#0B1A4A,#243B8F 55%,#5B3E9E);min-height:100vh}
+    .wrap{max-width:560px;margin:0 auto;padding:28px 18px 50px}
+    h1{font-size:28px;margin:6px 0 4px}
+    .sub{color:rgba(244,247,255,.82);margin:0 0 22px;line-height:1.5}
+    .step{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.22);border-radius:18px;padding:18px;margin:14px 0}
+    .num{display:inline-block;width:30px;height:30px;border-radius:50%;background:#FFD54F;color:#1A1440;font-weight:800;
+      text-align:center;line-height:30px;margin-right:8px}
+    .step h2{font-size:19px;margin:0 0 8px;display:flex;align-items:center}
+    .step p{margin:6px 0;color:rgba(244,247,255,.86);line-height:1.5;font-size:15px}
+    .btn{display:block;text-align:center;background:#FFD54F;color:#1A1440;text-decoration:none;font-weight:800;font-size:19px;
+      padding:16px;border-radius:14px;margin-top:10px}
+    .btn.sec{background:rgba(255,255,255,.18);color:#fff}
+    .code{font-size:34px;letter-spacing:6px;font-weight:800;text-align:center;background:rgba(0,0,0,.25);border-radius:12px;padding:10px;margin:8px 0}
+    .warn{background:rgba(255,171,64,.15);border:1px solid rgba(255,171,64,.55);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5}
+    small{color:rgba(244,247,255,.6)}
+  </style>
+</head>
+<body><div class="wrap">
+  <div style="font-size:56px">🌙</div>
+  <h1>FrohLock installieren</h1>
+  {% if state == "ok" %}
+  <p class="sub">Für „{{ name }}“. Diese Seite bitte <b>auf dem Kinder-Handy</b> öffnen.</p>
+
+  <div class="step">
+    <h2><span class="num">1</span>App herunterladen</h2>
+    {% if available %}
+    <a class="btn" href="/apk" download="FrohLock.apk">⬇️ FrohLock herunterladen{% if version %} ({{ version }}){% endif %}</a>
+    <p>Danach unten in der Leiste oder unter „Downloads“ auf <b>FrohLock.apk</b> tippen.</p>
+    <p>Fragt das Handy „Aus dieser Quelle installieren?“ → <b>Einstellungen → Zulassen</b>, zurück, <b>Installieren</b>.
+      Warnt Google Play Protect, auf <b>„Trotzdem installieren“</b> tippen (die App ist nur nicht aus dem Play Store).</p>
+    {% else %}
+    <p>⚠ Die App liegt gerade nicht auf dem Server – bitte später noch einmal versuchen.</p>
+    {% endif %}
+  </div>
+
+  <div class="step">
+    <h2><span class="num">2</span>Mit dem Admin koppeln</h2>
+    <a class="btn" href="{{ pair_link }}">🔗 FrohLock öffnen und koppeln</a>
+    <p>Falls der Knopf nichts tut: FrohLock öffnen → „Einrichtung abschließen“ → diesen Code eingeben:</p>
+    <div class="code">{{ code[:3] }} {{ code[3:] }}</div>
+  </div>
+
+  <div class="step">
+    <h2><span class="num">3</span>Erlaubnisse geben</h2>
+    <p>FrohLock führt euch durch die nötigen Erlaubnisse („Über anderen Apps einblenden“, Geräteadministrator,
+      Benachrichtigungen, Akku). Erst damit kann FrohLock den Sperrbildschirm zeigen.</p>
+  </div>
+
+  <div class="warn">
+    <b>Gut zu wissen:</b> Ohne Zurücksetzen ist der Schutz <b>einfacher</b> – ein Kind, das sich gut auskennt, kann FrohLock
+    in den Einstellungen abschalten. Das seht ihr dann im Admin („meldet sich nicht“ / Warnung).
+    Den vollen Schutz gibt es nur über den QR-Code beim Einrichten eines frisch zurückgesetzten Handys.
+  </div>
+  {% elif state == "used" %}
+  <p class="sub">Dieser Code wurde schon benutzt – das Gerät ist bereits gekoppelt. Für ein weiteres Gerät im Admin einen neuen Code erstellen.</p>
+  {% elif state == "expired" %}
+  <p class="sub">Dieser Code ist abgelaufen (24 Stunden). Bitte im Admin unter „Android-Gerät einrichten“ einen neuen erstellen.</p>
+  {% else %}
+  <p class="sub">Diesen Code gibt es nicht. Bitte den Link aus dem FrohLock-Admin verwenden.</p>
+  {% endif %}
+  <p style="text-align:center;margin-top:28px"><small>FrohLock · Fröhlich Dienste</small></p>
+</div></body>
+</html>

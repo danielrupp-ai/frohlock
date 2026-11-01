@@ -73,8 +73,12 @@ class ParentActivity : Activity() {
 
         col.addView(Ui.card(this).apply {
             fun line(s: String, c: Int = 0xEEFFFFFF.toInt()) = addView(Ui.text(this@ParentActivity, s, 15f, c))
-            line(if (owner) "✓ Geräte-Verwaltung aktiv (nicht löschbar, nicht beendbar)" else "⚠ Geräte-Verwaltung fehlt – Sperre leicht zu umgehen",
-                if (owner) Ui.GOOD else Ui.WARN)
+            val miss = if (owner) emptyList() else de.froehlichdienste.frohlock.android.WeakGuard.missing(this@ParentActivity)
+            line(when {
+                owner -> "✓ Voller Schutz: Geräte-Verwaltung aktiv (nicht löschbar, nicht beendbar)"
+                miss.isEmpty() -> "Einfacher Schutz (ohne Zurücksetzen) – alle Erlaubnisse da"
+                else -> "⚠ Einfacher Schutz – es fehlt: ${miss.joinToString(", ")}"
+            }, if (owner) Ui.GOOD else if (miss.isEmpty()) 0xEEFFFFFF.toInt() else Ui.WARN)
             line(if (p?.registered == true) "Gekoppelt als „${p.deviceName}“" else "⚠ Nicht mit dem Admin gekoppelt",
                 if (p?.registered == true) 0xEEFFFFFF.toInt() else Ui.WARN)
             val contact = Sync.lastContactMs
@@ -113,6 +117,9 @@ class ParentActivity : Activity() {
 
         col.addView(Ui.button(this, "🔄  Jetzt mit dem Admin abgleichen", primary = false) {
             GuardService.syncNow(this); showMenu()
+        })
+        if (!owner) col.addView(Ui.button(this, "✅  Erlaubnisse prüfen", primary = false) {
+            startActivity(Intent(this, SetupActivity::class.java))
         })
         col.addView(Ui.button(this, "🔗  Neu koppeln / Einrichtung", primary = false) {
             startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_REPAIR, true))

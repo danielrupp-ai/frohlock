@@ -453,9 +453,12 @@ def _qr_page(request: Request, code_row, wifi_ssid: str = "", wifi_password: str
     if "template_device_id" in keys and code_row["template_device_id"]:
         t = db.query_one("SELECT name FROM devices WHERE id=?", (code_row["template_device_id"],))
         template_name = t["name"] if t else None
+    link = android.install_link(code_row["code"])
     return templates.TemplateResponse("android_qr.html", {
         "request": request, "code": code_row, "ready": ready,
         "qr": android.qr_svg(payload) if ready["apk"] and ready["cert"] else None,
+        "qr_dense": android.qr_version(payload) > 16,
+        "install_link": link, "install_qr": android.qr_svg(link) if ready["apk"] else None,
         "with_wifi": bool(wifi_ssid.strip()), "template_name": template_name,
         "admin_component": android.ADMIN_COMPONENT, "now": int(time.time()),
     })

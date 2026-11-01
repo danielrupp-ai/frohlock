@@ -386,3 +386,31 @@ def test_android_qr_pairing_copies_settings_and_updates_separately(client, tmp_p
     r = client.post(f"/admin/devices/{lap['deviceId']}/copy-from", data={"source_id": ph["deviceId"]}, follow_redirects=False)
     assert r.status_code == 303 and "ok=kopiert" in r.headers["location"]
     assert "Android-Gerät einrichten" in client.get("/admin").text
+
+
+def test_android_qr_is_compact_and_install_link_page(client, tmp_path, monkeypatch):
+    import app.db as dbmod
+    from app import android
+    _admin_login(client)
+    monkeypatch.setattr(settings, "download_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "public_base_url", "https://frohlock.froehlichdienste.de")
+    (tmp_path / "FrohLock.apk").write_bytes(b"PK-apk")
+    (tmp_path / "android-version.txt").write_text("1.0.1")
+    (tmp_path / "android-cert.txt").write_text("9wdtJbgqKD97VcjuD_nUvmB91n0lX3yoFk4oPR3soYI")
+
+    # QR muss grob bleiben, sonst scannt der Einrichtungsassistent ihn nicht vom Bildschirm.
+    assert android.qr_version(android.provisioning_payload("123456", "Handy")) <= 15
+    p = android.provisioning_payload("123456", "Handy")
+    assert p["android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION"].endswith("/apk")
+    assert p["android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE"] == {"pairingCode": "123456"}
+
+    r = client.post("/admin/android/new", data={"device_name": "Handy Kind"})
+    assert "Weg 2" in r.text and "/i/" in r.text and r.text.count("<svg") >= 2
+    code = dbmod.query_one("SELECT code FROM pairing_codes WHERE platform='android'")["code"]
+
+    page = client.get(f"/i/{code}").text          # öffentlich, ohne Login
+    assert "FrohLock herunterladen" in page and f"frohlock://koppeln?code={code}" in page
+    assert client.get("/apk").content == b"PK-apk"
+    assert "gibt es nicht" in client.get("/i/000000").text or code == "000000"
+    client.post("/devices/register", json={"pairingCode": code, "deviceName": "x", "platform": "android"})
+    assert "schon benutzt" in client.get(f"/i/{code}").text

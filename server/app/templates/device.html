@@ -32,7 +32,10 @@
   <table>
     <tr><td style="width:46%">Geräte-Verwaltung</td><td>
       {% if dev["device_owner"] == 1 %}<span style="color:#69f0ae">✓ aktiv</span> <span class="muted">– FrohLock ist nicht löschbar und nicht beendbar</span>
-      {% elif dev["device_owner"] == 0 %}<span style="color:#ffab40">⚠ fehlt</span> <span class="muted">– die Sperre ist so leicht zu umgehen. Das Handy über den QR-Code neu einrichten (vorher zurücksetzen).</span>
+      {% elif dev["device_owner"] == 0 %}<span style="color:#ffab40">Einfacher Schutz</span> <span class="muted">– per Link installiert. Sperren funktioniert,
+        aber ein geschicktes Kind kann FrohLock in den Einstellungen abschalten. Voller Schutz: Handy zurücksetzen und per QR-Code (Weg 1) einrichten.</span>
+        {% if android_info.get("missing") %}<br><span style="color:#ff8a80">⚠ Am Handy fehlt noch: {{ android_info.get("missing")|join(", ") }}</span>
+        <span class="muted">(Eltern-Bereich → „Erlaubnisse prüfen“)</span>{% endif %}
       {% else %}<span class="muted">noch keine Meldung</span>{% endif %}</td></tr>
     <tr><td>Sperr-Modus gerade an</td><td>{% if dev["lock_task"] == 1 %}ja – nur FrohLock, Telefon und Wecker erreichbar{% elif dev["lock_task"] == 0 %}nein{% else %}–{% endif %}</td></tr>
     {% if android_info.get("model") %}<tr><td>Gerät</td><td>{{ android_info.get("model") }} · {{ android_info.get("android", "") }}</td></tr>{% endif %}

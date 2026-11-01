@@ -6,67 +6,117 @@
   <a class="btn" id="done-link" href="/admin"><button>Gerät öffnen</button></a>
 </div>
 
+<div class="card">
+  <h1 style="margin-bottom:6px">„{{ code['device_name'] }}“ einrichten</h1>
+  <p class="muted" style="margin:0">Kopplungscode <code class="code">{{ code['code'] }}</code> · gültig noch {{ ((code['expires_at'] - now) // 3600) }} Std
+    {% if template_name %} · Einstellungen wie „{{ template_name }}“{% endif %} · <span id="waiting">⏳ warte auf das Gerät …</span></p>
+  <div class="fl-tabs">
+    <button type="button" class="fl-tab on" data-t="qr">Weg 1: QR-Code beim Einrichten<br><small>voller Schutz · Handy wird zurückgesetzt</small></button>
+    <button type="button" class="fl-tab" data-t="link">Weg 2: Link öffnen &amp; installieren<br><small>ohne Zurücksetzen · einfacher Schutz</small></button>
+  </div>
+</div>
+
+<!-- ===================== Weg 1 ===================== -->
+<div class="fl-pane" id="pane-qr">
 <div class="grid">
   <div class="card" style="text-align:center">
-    <h1 style="font-size:20px">QR-Code für „{{ code['device_name'] }}“</h1>
     {% if qr %}
-      <div style="background:#fff;border-radius:12px;padding:10px;display:inline-block;max-width:100%">{{ qr | safe }}</div>
-      <p class="muted">Kopplungscode <code class="code">{{ code['code'] }}</code> · gültig {{ ((code['expires_at'] - now) // 3600) }} Std
-        {% if with_wifi %}· mit WLAN{% endif %}{% if template_name %} · Einstellungen wie „{{ template_name }}“{% endif %}</p>
+      <div class="fl-qr" data-big="qr-big">{{ qr | safe }}</div>
+      <button type="button" class="secondary" onclick="big('qr-big')" style="margin-top:10px">⛶ Groß anzeigen (zum Scannen)</button>
+      {% if qr_dense %}<p class="muted" style="color:#ffab40">⚠ Mit WLAN-Daten ist der Code dichter. Klappt das Scannen nicht, ohne WLAN neu erstellen –
+        das Handy fragt dann selbst nach dem WLAN.</p>{% endif %}
       {% if with_wifi %}<p class="muted">⚠ In diesem QR-Code steht euer WLAN-Passwort – Seite nach dem Scannen schließen.</p>{% endif %}
+      <div id="qr-big" class="fl-big" onclick="this.style.display='none'">{{ qr | safe }}<p>Antippen zum Schließen</p></div>
     {% else %}
       <p style="color:#ff8a80">⚠ Der QR-Code kann noch nicht erstellt werden: Die Android-App liegt noch nicht auf dem Server.</p>
-      <p class="muted">Kopplungscode für die Hand-Eingabe: <code class="code">{{ code['code'] }}</code></p>
     {% endif %}
-    <p class="muted" id="waiting">⏳ Warte auf das Gerät …</p>
   </div>
 
   <div class="card">
     <h2>So geht's – am Kinder-Handy</h2>
     <ol class="fl-steps">
-      <li><b>Handy einschalten</b> (neu oder frisch zurückgesetzt). Ihr seht den Willkommens-Bildschirm („Hallo“ / „Los geht's“).</li>
-      <li><b>Sechsmal schnell</b> auf eine freie Stelle in der Mitte des Bildschirms tippen.
-        <span class="muted">Bei Samsung manchmal: auf das Wort „Willkommen“ tippen.</span></li>
-      <li>Es öffnet sich eine <b>Kamera zum Scannen</b>. {% if not with_wifi %}Vorher fragt das Handy evtl. nach dem WLAN – bitte verbinden.{% endif %}
-        Jetzt diesen QR-Code scannen.</li>
-      <li>Das Handy sagt: <i>„Dieses Gerät gehört eurer Organisation“</i> o. ä. – das ist richtig so, <b>Weiter/Akzeptieren</b>.
-        FrohLock wird jetzt geladen und eingerichtet.</li>
-      <li>FrohLock zeigt kurz <b>„Verbinde mit FrohLock …“</b>.
-        {% if template_name %}Die Einstellungen von „{{ template_name }}“ kommen automatisch – nichts eintippen.
-        {% else %}Dann <b>Eltern-PIN</b>, Schlafenszeit und Tageslimit festlegen.{% endif %}</li>
-      <li>„Weiter mit der Handy-Einrichtung“ – danach ganz normal fertig einrichten (Google-Konto, Displaysperre …).</li>
+      <li>Handy <b>neu oder auf Werkseinstellungen zurückgesetzt</b> einschalten (Daten vorher sichern). Ihr seht „Willkommen“ / „Los geht's“.</li>
+      <li><b>Sechsmal schnell</b> auf eine freie Stelle mitten auf dem Bildschirm tippen.
+        <span class="muted">Samsung: auf eine leere Fläche über dem „Start“-Knopf tippen.</span></li>
+      <li>Das Handy will ins <b>WLAN</b> – verbinden. Dann öffnet sich eine <b>Kamera</b>.</li>
+      <li>Hier oben <b>„Groß anzeigen“</b> tippen und den Code mit Abstand von ca. 20–30 cm scannen.
+        Hilft: Bildschirm heller, kein Spiegeln, Handy ruhig halten.</li>
+      <li>„Dieses Gerät gehört eurer Organisation“ → <b>Weiter/Akzeptieren</b>. FrohLock wird geladen und koppelt sich selbst.</li>
+      <li>{% if template_name %}Die Einstellungen von „{{ template_name }}“ kommen automatisch.{% else %}FrohLock fragt nach <b>Eltern-PIN</b>, Schlafenszeit und Tageslimit.{% endif %}
+        Dann „Weiter mit der Handy-Einrichtung“.</li>
     </ol>
-    <p class="muted">Klappt das Tippen nicht? Bei manchen Android-7/8-Geräten muss erst ein QR-Leser geladen werden – das fragt das Handy dann selbst.</p>
+    <p class="muted">Kein 6×-Tippen möglich oder keine Kamera erscheint? Manche Geräte (v. a. ältere oder stark angepasste) haben
+      diese Einrichtung nicht – dann <a href="#" onclick="tab('link');return false" style="color:#9ecbff">Weg 2</a> nehmen.</p>
   </div>
 </div>
+</div>
 
-<div class="card">
-  <h2>Was FrohLock auf dem Handy dann kann</h2>
-  <ul class="fl-list">
-    <li>🌙 <b>Sperrzeiten & Tageslimit</b> wie am Laptop – mit dem lieben Sternenhimmel-Bildschirm.</li>
-    <li>🔒 <b>Echte Sperre:</b> In der Sperrzeit kommt man nur noch an FrohLock, das Telefon (Notruf, Mama/Papa anrufen, eingehende Anrufe) und den Wecker. Alle anderen Apps sind pausiert.</li>
-    <li>🛡 <b>Nicht zu umgehen:</b> FrohLock lässt sich nicht löschen und nicht beenden; Uhrzeit verstellen, abgesicherter Modus, Zurücksetzen über die Einstellungen, Entwickleroptionen und Apps aus Dateien sind gesperrt.</li>
-    <li>📲 <b>Apps aus dem Play Store</b> installieren geht weiterhin ganz normal.</li>
-    <li>🔑 <b>Eltern-PIN am Handy:</b> 30 Min / 1 Std / 2 Std freigeben, und im Eltern-Bereich die Einstellungen 15 Minuten freischalten (z. B. um die Uhrzeit zu ändern).</li>
-    <li>🛑 <b>Auszeit, Sofort sperren, Entsperren</b> von hier aus – wirkt in Sekunden, sobald das Handy online ist.</li>
-    <li>⬆️ <b>Updates kommen von selbst</b>, ohne Nachfrage am Handy.</li>
-  </ul>
-  <details style="margin-top:12px">
-    <summary class="muted" style="cursor:pointer">Ohne Zurücksetzen? (für Technik-Fans)</summary>
-    <p class="muted" style="margin-top:8px">Geht nur, wenn auf dem Handy <b>kein</b> Google-/Samsung-Konto angemeldet ist: APK von
-      <code>/download/android</code> installieren, dann per USB-Debugging am Computer:<br>
-      <code>adb shell dpm set-device-owner {{ admin_component }}</code><br>
-      Danach FrohLock öffnen → „Einrichtung abschließen“ → Kopplungscode <code>{{ code['code'] }}</code> eingeben.
-      Ohne Geräte-Verwalter sperrt FrohLock nur schwach – das Admin-Web zeigt dann eine Warnung.</p>
-  </details>
+<!-- ===================== Weg 2 ===================== -->
+<div class="fl-pane" id="pane-link" style="display:none">
+<div class="grid">
+  <div class="card" style="text-align:center">
+    <h2>Mit der normalen Kamera scannen</h2>
+    {% if install_qr %}
+      <div class="fl-qr fl-qr-small">{{ install_qr | safe }}</div>
+      <button type="button" class="secondary" onclick="big('link-big')" style="margin-top:10px">⛶ Groß anzeigen</button>
+      <div id="link-big" class="fl-big" onclick="this.style.display='none'">{{ install_qr | safe }}<p>Antippen zum Schließen</p></div>
+    {% else %}
+      <p style="color:#ff8a80">⚠ Die Android-App liegt noch nicht auf dem Server.</p>
+    {% endif %}
+    <p style="margin:14px 0 4px">… oder diesen Link am Kinder-Handy im Browser eintippen:</p>
+    <div class="fl-link"><span id="ilink">{{ install_link }}</span></div>
+    <button type="button" class="secondary" onclick="copyLink()" style="margin-top:8px" id="copybtn">📋 Link kopieren (z. B. per WhatsApp schicken)</button>
+  </div>
+
+  <div class="card">
+    <h2>So geht's – am Kinder-Handy</h2>
+    <ol class="fl-steps">
+      <li>Link öffnen (QR mit der Kamera scannen oder eintippen). Es erscheint die FrohLock-Seite.</li>
+      <li><b>„FrohLock herunterladen“</b> → Datei öffnen → <b>Installieren</b>. Fragt das Handy nach „unbekannten Quellen“: zulassen.
+        Warnt Play Protect: „Trotzdem installieren“.</li>
+      <li><b>„FrohLock öffnen und koppeln“</b> – der Code wird automatisch übernommen (sonst Code <code>{{ code['code'] }}</code> eintippen).</li>
+      <li>FrohLock führt durch die Erlaubnisse: <b>Über anderen Apps einblenden</b>, <b>Geräteadministrator</b>, Benachrichtigungen, Akku.</li>
+      <li>{% if template_name %}Einstellungen kommen automatisch.{% else %}Eltern-PIN, Schlafenszeit und Tageslimit festlegen.{% endif %}</li>
+    </ol>
+    <div class="fl-note">
+      <b>Unterschied zu Weg 1:</b> Sperrzeiten, Limit, Auszeit und Fernsteuerung funktionieren genauso – der Sperrbildschirm
+      liegt über allen Apps. Aber ein Kind, das sich auskennt, kann FrohLock über die Einstellungen abschalten
+      (Geräteadministrator deaktivieren, „Beenden erzwingen“). FrohLock meldet das hier im Admin, verhindern kann es das ohne
+      Zurücksetzen nicht. Später jederzeit auf Weg 1 umsteigen möglich.
+    </div>
+  </div>
+</div>
 </div>
 
 <style>
+  .fl-tabs { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .fl-tab { flex:1; min-width:220px; background:#0b1f3a; border:2px solid transparent; text-align:left; line-height:1.35; padding:10px 14px; }
+  .fl-tab small { font-weight:400; color:#9fb3c8; }
+  .fl-tab.on { border-color:#69f0ae; background:#16365e; }
+  .fl-qr svg { width:100%; max-width:440px; min-width:260px; height:auto; display:block; margin:0 auto; border-radius:8px; }
+  .fl-qr-small svg { max-width:300px; }
+  .fl-big { display:none; position:fixed; inset:0; background:#fff; z-index:50; align-items:center; justify-content:center; flex-direction:column; cursor:pointer; }
+  .fl-big svg { width:92vmin; height:92vmin; }
+  .fl-big p { color:#333; margin:6px 0 0; font-size:14px; }
+  .fl-link { background:#0b1f3a; border-radius:10px; padding:12px; font-size:17px; font-weight:700; word-break:break-all; }
+  .fl-note { background:rgba(255,171,64,.12); border:1px solid rgba(255,171,64,.5); border-radius:10px; padding:10px 14px; margin-top:12px; font-size:14px; line-height:1.5; }
   .fl-steps { margin:0; padding-left:20px; } .fl-steps li { margin:8px 0; line-height:1.5; font-size:15px; }
-  .fl-list { margin:0; padding-left:4px; list-style:none; } .fl-list li { margin:8px 0; line-height:1.5; font-size:15px; }
-  svg { max-width:100%; height:auto; }
 </style>
 <script>
+  function big(id) { var e = document.getElementById(id); e.style.display = "flex"; }
+  function tab(t) {
+    document.getElementById("pane-qr").style.display = t === "qr" ? "" : "none";
+    document.getElementById("pane-link").style.display = t === "link" ? "" : "none";
+    document.querySelectorAll(".fl-tab").forEach(function (b) { b.classList.toggle("on", b.dataset.t === t); });
+  }
+  document.querySelectorAll(".fl-tab").forEach(function (b) { b.onclick = function () { tab(b.dataset.t); }; });
+  function copyLink() {
+    var t = document.getElementById("ilink").textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () {
+      document.getElementById("copybtn").textContent = "✓ Kopiert";
+    }).catch(function () { prompt("Link kopieren:", t); });
+  }
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") document.querySelectorAll(".fl-big").forEach(function (x) { x.style.display = "none"; }); });
   (function poll() {
     fetch("/admin/android/qr/{{ code['code'] }}/status", {credentials: "same-origin"})
       .then(function (r) { return r.json(); })
@@ -75,6 +125,7 @@
           document.getElementById("done").style.display = "block";
           document.getElementById("done-link").href = "/admin/devices/" + s.deviceId;
           document.getElementById("waiting").textContent = "✅ verbunden";
+          document.querySelectorAll(".fl-big").forEach(function (x) { x.style.display = "none"; });
           return;
         }
         if (s.expired) { document.getElementById("waiting").textContent = "⚠ Code abgelaufen – bitte neu erstellen."; return; }

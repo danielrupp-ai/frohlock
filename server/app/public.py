@@ -56,6 +56,7 @@ def download():
     return FileResponse(path, media_type="application/octet-stream", filename=INSTALLER_NAME)
 
 
+@router.api_route("/apk", methods=["GET", "HEAD"])
 @router.api_route("/download/android", methods=["GET", "HEAD"])
 def download_android():
     """APK für Android – lädt der Einrichtungsassistent nach dem QR-Code selbst herunter."""
@@ -63,3 +64,26 @@ def download_android():
     if not os.path.exists(path):
         return HTMLResponse("<h1>Android-App derzeit nicht verfügbar</h1>", status_code=404)
     return FileResponse(path, media_type="application/vnd.android.package-archive", filename=android.APK_NAME)
+
+
+@router.get("/i/{code}", response_class=HTMLResponse)
+def install_page(request: Request, code: str):
+    """Installations-Seite für den Weg OHNE Zurücksetzen: am Kinder-Handy im Browser öffnen,
+    App laden, dann „Jetzt koppeln“ – der Code wird an die App übergeben."""
+    import time
+    from . import db
+    clean = "".join(ch for ch in code if ch.isdigit())[:6]
+    row = db.query_one("SELECT device_name, expires_at, used_device_id FROM pairing_codes WHERE code=?", (clean,))
+    state = "ok"
+    if not row:
+        state = "unknown"
+    elif row["used_device_id"]:
+        state = "used"
+    elif row["expires_at"] < int(time.time()):
+        state = "expired"
+    return templates.TemplateResponse("install.html", {
+        "request": request, "code": clean, "state": state,
+        "name": row["device_name"] if row else "",
+        "available": os.path.exists(android.apk_path()), "version": android.apk_version(),
+        "pair_link": f"frohlock://koppeln?code={clean}",
+    })

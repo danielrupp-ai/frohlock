@@ -90,6 +90,7 @@ class MainActivity : Activity() {
         val m = e.minutesUntilLock()
         left.text = if (m > 0) "Noch ${UsageTimeline.fmtMinutes(m)} bis zur nächsten Pause" else ""
         left.visibility = if (m > 0) View.VISIBLE else View.GONE
-        schedule.text = e.todaySummary() + if (!DeviceOwner.isDeviceOwner(this) && e.isConfigured) "\n⚠ Geräte-Verwaltung fehlt" else ""
+        val miss = if (!DeviceOwner.isDeviceOwner(this) && e.isConfigured) de.froehlichdienste.frohlock.android.WeakGuard.missing(this) else emptyList()
+        schedule.text = e.todaySummary() + if (miss.isNotEmpty()) "\n⚠ Es fehlt noch: ${miss.joinToString(", ")} – Eltern-Bereich → „Erlaubnisse prüfen“" else ""
     }
 }

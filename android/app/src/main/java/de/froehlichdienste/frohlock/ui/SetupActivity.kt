@@ -22,6 +22,7 @@ import de.froehlichdienste.frohlock.android.Pairing
 import de.froehlichdienste.frohlock.android.Provisioning
 import de.froehlichdienste.frohlock.android.ServerApi
 import de.froehlichdienste.frohlock.android.Sync
+import de.froehlichdienste.frohlock.android.WeakGuard
 import de.froehlichdienste.frohlock.core.PinHasher
 import org.json.JSONArray
 import org.json.JSONObject
@@ -193,15 +194,18 @@ class SetupActivity : Activity() {
     @SuppressLint("BatteryLife")
     private fun showDone() {
         val owner = DeviceOwner.isDeviceOwner(this)
-        header("Schritt 3 von 3", "Fertig – FrohLock passt auf 💛",
+        onDoneStep = true
+        header("Schritt 3 von 3", if (owner || WeakGuard.missing(this).isEmpty()) "Fertig – FrohLock passt auf 💛" else "Fast fertig – noch Erlaubnisse geben",
             "Sperrzeiten, Tageslimit, Auszeit und Fern-Entsperren steuert ihr ab jetzt im Admin " +
             "(frohlock.froehlichdienste.de/admin).")
         col.addView(Ui.card(this).apply {
             addView(Ui.text(this@SetupActivity, if (owner) "✓ Geräte-Verwaltung aktiv – FrohLock kann nicht gelöscht oder beendet werden."
-                else "⚠ Geräte-Verwaltung fehlt – die Sperre ist so leicht zu umgehen. Richtet das Handy am besten über den QR-Code neu ein.",
-                15f, if (owner) Ui.GOOD else Ui.WARN))
+                else "Einfacher Schutz (ohne Zurücksetzen): Der Sperrbildschirm liegt über allen Apps. Ein Kind, das sich auskennt, " +
+                     "kann FrohLock aber in den Einstellungen abschalten – das seht ihr dann im Admin.",
+                15f, if (owner) Ui.GOOD else 0xEEFFFFFF.toInt()))
             addView(Ui.text(this@SetupActivity, Guard.enforcer.todaySummary(), 15f))
         })
+        if (!owner) addWeakModePermissions()
         val pm = getSystemService(PowerManager::class.java)
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
             col.addView(Ui.button(this, "Akku-Sparen für FrohLock ausschalten (empfohlen)", primary = false) {
@@ -212,7 +216,50 @@ class SetupActivity : Activity() {
         GuardService.syncNow(this)
     }
 
-    override fun onResume() { super.onResume(); isActive = true }
+    private var onDoneStep = false
+
+    override fun onResume() {
+        super.onResume(); isActive = true
+        // Nach dem Erteilen einer Erlaubnis kommt man hierher zurück – Häkchen auffrischen.
+        if (onDoneStep) showDone()
+    }
+
+    /** Einfacher Modus: die nötigen Erlaubnisse einzeln, mit Häkchen und Klartext. */
+    private fun addWeakModePermissions() {
+        col.addView(Ui.text(this, "Damit FrohLock sperren kann", 18f, bold = true))
+        fun item(done: Boolean, title: String, why: String, action: () -> Unit) {
+            val card = Ui.card(this)
+            card.addView(Ui.text(this, (if (done) "✓ " else "○ ") + title, 17f, if (done) Ui.GOOD else Ui.ACCENT, bold = true))
+            card.addView(Ui.text(this, why, 14f, 0xCCFFFFFF.toInt()))
+            if (!done) card.addView(Ui.button(this, "Erlauben") { action() })
+            col.addView(card)
+        }
+        item(WeakGuard.canOverlay(this), "Über anderen Apps einblenden",
+            "Damit der Sperrbildschirm über Spielen und Videos liegt. In der Liste FrohLock antippen und einschalten.") {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) } catch (_: Exception) { openAppInfo() }
+        }
+        item(WeakGuard.isAdminActive(this), "Geräteadministrator",
+            "Damit FrohLock nicht einfach gelöscht werden kann. Auf „Aktivieren“ tippen.") {
+            try {
+                startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                    .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, DeviceOwner.admin(this))
+                    .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "FrohLock schützt die Bildschirmzeit. Als Geräteadministrator kann die App nicht einfach gelöscht werden."))
+            } catch (_: Exception) { openAppInfo() }
+        }
+        item(WeakGuard.notificationsAllowed(this), "Benachrichtigungen",
+            "Für die freundliche Erinnerung kurz vor der Schlafenszeit.") {
+            if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+            else openAppInfo()
+        }
+        col.addView(Ui.text(this, "Kommt die Meldung „Eingeschränkte Einstellung“? Dann: App-Info öffnen → oben rechts ⋮ → " +
+            "„Eingeschränkte Einstellungen zulassen“ → zurück und noch einmal „Erlauben“.", 14f, 0xAAFFFFFF.toInt()))
+        col.addView(Ui.button(this, "App-Info öffnen", primary = false) { openAppInfo() })
+    }
+
+    private fun openAppInfo() {
+        try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (_: Exception) { }
+    }
     override fun onPause() { isActive = false; super.onPause() }
 
     private fun finishOk() {

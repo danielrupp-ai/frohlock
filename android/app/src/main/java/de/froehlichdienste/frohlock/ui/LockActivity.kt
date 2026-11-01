@@ -142,6 +142,7 @@ class LockActivity : Activity() {
         lastVisibleUptime = SystemClock.uptimeMillis()
         callGraceUntilUptime = 0
         hideSystemBars()
+        if (!DeviceOwner.isDeviceOwner(this)) de.froehlichdienste.frohlock.android.WeakGuard.setOverlay(this, false)
         if (Guard.enforcer.decide().locked && DeviceOwner.isDeviceOwner(this) && !DeviceOwner.lockTaskActive(this)) {
             try { startLockTask() } catch (e: Exception) { Guard.audit.write("UMGEHUNG", "⚠ Sperr-Modus ließ sich nicht starten: ${e.javaClass.simpleName}") }
         }
@@ -152,6 +153,8 @@ class LockActivity : Activity() {
         isResumed = false
         lastVisibleUptime = SystemClock.uptimeMillis()
         ui.removeCallbacks(refresher)
+        // Einfacher Modus: sofort neu entscheiden, damit das Overlay ohne Lücke kommt.
+        if (!leaving) GuardService.poke(this)
         super.onPause()
     }
 
