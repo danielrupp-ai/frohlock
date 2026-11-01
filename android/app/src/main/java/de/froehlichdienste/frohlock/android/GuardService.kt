@@ -74,6 +74,7 @@ class GuardService : Service() {
             loop()
         }
         net.scheduleWithFixedDelay({ netRound(force = false) }, 2, 10, TimeUnit.SECONDS)
+        WatchdogReceiver.schedule(this, 60_000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -82,8 +83,17 @@ class GuardService : Service() {
         return START_STICKY
     }
 
+    /** App aus der Übersicht gewischt: sofort wiederkommen (manche Hersteller beenden dabei den Dienst). */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Guard.audit.write("DIENST", "FrohLock aus der App-Übersicht entfernt – Schutz läuft weiter")
+        WatchdogReceiver.schedule(this, 1_000)
+        handler.post { tick() }
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         instance = null
+        if (!releasing) WatchdogReceiver.schedule(this, 2_000)
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) { }
         net.shutdownNow()
         tickThread.quitSafely()
@@ -122,23 +132,22 @@ class GuardService : Service() {
         // Während der Handy-Einrichtung (Setup-Assistent, FrohLock-Einrichtung) nie dazwischenfunken.
         val settingUp = !userSetupComplete() || SetupActivity.isActive
         val owner = DeviceOwner.isDeviceOwner(this)
-        lastLocked = d.locked && !settingUp
-        if (d.locked && !settingUp) {
+        val enforcing = d.locked && !settingUp
+        lastLocked = enforcing
+        var lockVisible = false
+        if (enforcing) {
             DeviceOwner.suspendApps(this, true)
-            if (!owner) {
-                // Overlay deckt jede App ab, solange der Sperrbildschirm nicht vorne ist (nicht während eines Anrufs).
-                val inCall = SystemClock.uptimeMillis() < LockActivity.callGraceUntilUptime
-                WeakGuard.setOverlay(this, !LockActivity.isResumed && !inCall)
-            }
-            if (on) ensureLockScreen()
+            lockVisible = if (owner) enforceOwner(on) else enforceWeak(on)
         } else {
             if (!owner) WeakGuard.setOverlay(this, false)
+            outsideSince = 0
             if (!d.locked) {
                 DeviceOwner.suspendApps(this, false)
                 if (on && dt > 0) e.accrueUsage(dt)
             }
         }
-        if (dt > 0) e.tickPenalty(dt, on)
+        // Auszeit läuft nur ab, solange das Kind sie wirklich vor sich sieht (nicht im Spiel, nicht in Telegram).
+        if (dt > 0) e.tickPenalty(dt, on && lockVisible)
 
         if (isRelaxedExpired()) {
             Guard.state.relaxedUntilUnix = 0
@@ -156,28 +165,74 @@ class GuardService : Service() {
         updateNotification(d.locked, d.reason)
     }
 
-    /** Gesperrt, aber Sperrbildschirm nicht vorne → (wieder) holen; dauert es, ins Geräte-Protokoll. */
-    private fun ensureLockScreen() {
+    private var outsideSince = 0L
+    private var lastForeignAudit = 0L
+    private var lastLockNowAudit = 0L
+
+    /** Voller Schutz: Im Sperr-Modus kann nur Erlaubtes vorne sein (Telegram, Signal, Telefon, Wecker). */
+    private fun enforceOwner(on: Boolean): Boolean {
+        if (LockActivity.isResumed) return true
+        if (DeviceOwner.lockTaskActive(this)) return false        // Kind ist in einer erlaubten App
+        if (on) relaunchLock()
         val now = SystemClock.uptimeMillis()
-        if (LockActivity.isResumed) return
-        // Telefon-Ausnahme: ein Anruf aus der Sperre heraus wird nicht sofort überdeckt.
-        if (now < LockActivity.callGraceUntilUptime) return
-        if (now - lastLockLaunch > 2_000) {
-            lastLockLaunch = now
-            try {
-                startActivity(Intent(this, LockActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION))
-            } catch (_: Exception) { }
-        }
         val hiddenFor = now - LockActivity.lastVisibleUptime
-        // Im einfachen Modus ist „weggewechselt" normal (das Overlay deckt ab) – nur melden, wenn auch das fehlt.
-        val covered = !DeviceOwner.isDeviceOwner(this) && WeakGuard.canOverlay(this)
-        if (!covered && LockActivity.lastVisibleUptime > 0 && hiddenFor > 20_000 && now - lastBypassAudit > 120_000) {
+        if (LockActivity.lastVisibleUptime > 0 && hiddenFor > 20_000 && now - lastBypassAudit > 120_000) {
             lastBypassAudit = now
-            Guard.audit.write("UMGEHUNG", "⚠ Gesperrt, aber Sperrbildschirm seit ${hiddenFor / 1000} s nicht im Vordergrund" +
-                if (!DeviceOwner.isDeviceOwner(this)) " (Geräte-Verwaltung fehlt!)" else "")
+            Guard.audit.write("UMGEHUNG", "⚠ Gesperrt, aber Sperr-Modus nicht aktiv (seit ${hiddenFor / 1000} s) – wird neu gestartet")
         }
+        return false
     }
+
+    /**
+     * Einfacher Schutz (ohne Geräte-Verwaltung), bewusst hart:
+     * - erlaubte App vorne (Telegram, Signal, Telefon, Wecker) → in Ruhe lassen
+     * - alles andere → Vollbild-Overlay + Sperrbildschirm sofort zurück
+     * - bleibt das Kind > 12 s woanders (Overlay weggewischt, App geschlossen, Trick) → Bildschirm aus (Geräteadministrator)
+     */
+    private fun enforceWeak(on: Boolean): Boolean {
+        val now = SystemClock.uptimeMillis()
+        if (LockActivity.isResumed) { WeakGuard.setOverlay(this, false); outsideSince = 0; return true }
+        val fg = ForegroundApp.current(this)
+        val inAllowed = fg != null && fg in AllowedApps.packages(this)
+        // Ohne Nutzungsdaten weiß FrohLock nicht, was vorne ist: dann nur echte Telefonate und die
+        // ersten 60 s nach „Anrufen" frei lassen – Messenger brauchen die Nutzungsdaten-Erlaubnis.
+        val free = inAllowed || (fg == null && (CallState.busy(this) || now < LockActivity.callGraceUntilUptime))
+        if (free) { WeakGuard.setOverlay(this, false); outsideSince = 0; return false }
+
+        WeakGuard.setOverlay(this, true)
+        if (!on) { outsideSince = 0; return WeakGuard.isShowing }
+        relaunchLock()
+        if (fg != null && fg != homePackage() && now - lastForeignAudit > 120_000) {
+            lastForeignAudit = now
+            Guard.audit.write("UMGEHUNG", "⚠ Während der Sperre war „${appLabel(fg)}“ vorne – Sperre wieder darübergelegt")
+        }
+        if (outsideSince == 0L) outsideSince = now
+        if (now - outsideSince > 12_000 && WeakGuard.isAdminActive(this)) {
+            outsideSince = now
+            try { getSystemService(android.app.admin.DevicePolicyManager::class.java).lockNow() } catch (_: Exception) { }
+            if (now - lastLockNowAudit > 120_000) {
+                lastLockNowAudit = now
+                Guard.audit.write("UMGEHUNG", "⚠ Sperrbildschirm wurde umgangen" + (if (fg != null) " („${appLabel(fg)}“ vorne)" else "") +
+                    " – Bildschirm ausgeschaltet")
+            }
+        }
+        return WeakGuard.isShowing
+    }
+
+    private fun relaunchLock() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastLockLaunch < 1_500) return
+        lastLockLaunch = now
+        WeakGuard.openLock(this)
+    }
+
+    private fun homePackage(): String? = try {
+        packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName
+    } catch (_: Exception) { null }
+
+    private fun appLabel(pkg: String): String = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    } catch (_: Exception) { pkg }
 
     /** Lief FrohLock nicht, obwohl das Gerät wach war? (Prozess beendet – z. B. durch das System.) */
     private fun detectGap() {
@@ -308,8 +363,11 @@ class GuardService : Service() {
                 .put("deviceInfo", Sync.deviceInfo(ctx)
                     .put("overlay", WeakGuard.canOverlay(ctx))
                     .put("deviceAdmin", WeakGuard.isAdminActive(ctx))
+                    .put("usageAccess", ForegroundApp.hasAccess(ctx))
+                    .put("allowedApps", org.json.JSONArray(AllowedApps.installedMessengers(ctx).map { it.second }))
                     .put("missing", org.json.JSONArray(if (DeviceOwner.isDeviceOwner(ctx)) emptyList() else WeakGuard.missing(ctx))))
                 .put("relaxedUntilUnix", Guard.state.relaxedUntilUnix)
+                .put("lockVisible", LockActivity.isResumed || WeakGuard.isShowing)
         }
 
         /** Alles freigeben und FrohLock zum Entfernen vorbereiten (Eltern-PIN oder Admin-Befehl). */

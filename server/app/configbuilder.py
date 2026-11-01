@@ -8,6 +8,16 @@ from . import db
 from .config import settings
 from .signing import make_envelope
 
+# Android: Apps, die auch während jeder Sperre offen bleiben. Standard = Telegram + Signal (Daniel 01.11.2026).
+DEFAULT_ALLOWED_APPS = ["org.telegram.messenger", "org.telegram.messenger.web", "org.thoughtcrime.securesms"]
+# Für die Auswahl im Admin (Name -> Paketnamen).
+KNOWN_MESSENGERS = [
+    ("Telegram", ["org.telegram.messenger", "org.telegram.messenger.web"]),
+    ("Signal", ["org.thoughtcrime.securesms"]),
+    ("WhatsApp", ["com.whatsapp"]),
+    ("Threema", ["ch.threema.app"]),
+]
+
 
 def get_stored(device_id: str) -> tuple[int, dict] | None:
     row = db.query_one(
@@ -57,6 +67,7 @@ def build_full_config(device_id: str) -> dict | None:
         "serverPollSeconds": 30,
         "maxTrustedTimeStalenessMinutes": draft.get("maxTrustedTimeStalenessMinutes", 4320),
         "failSecureLocked": True,
+        "alwaysAllowedApps": draft.get("alwaysAllowedApps", DEFAULT_ALLOWED_APPS),
     }
 
 
@@ -74,7 +85,7 @@ def current_version(device_id: str) -> int:
 
 # Was beim Übernehmen von einem anderen Gerät mitkommt (Zeitplan, Limits, PIN, Entsperrdauer).
 _COPY_KEYS = ("windows", "dailyBudgetMinutes", "dailyBudgetByWeekday", "unlockGraceMinutes",
-              "pinHash", "pinSalt", "pinIterations", "maxTrustedTimeStalenessMinutes")
+              "pinHash", "pinSalt", "pinIterations", "maxTrustedTimeStalenessMinutes", "alwaysAllowedApps")
 
 
 def copy_settings(source_id: str, target_id: str) -> str | None:

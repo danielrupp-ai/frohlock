@@ -98,6 +98,7 @@ object DeviceOwner {
     fun lockTaskPackages(ctx: Context): Set<String> {
         val out = linkedSetOf(ctx.packageName)
         out.addAll(phonePackages(ctx))
+        out.addAll(AllowedApps.configured())          // Telegram, Signal … dürfen auch im Sperr-Modus auf
         clockPackage(ctx)?.let { out.add(it) }
         return out
     }

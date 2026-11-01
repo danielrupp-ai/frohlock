@@ -59,6 +59,8 @@ data class LockConfig(
     val tlsSpkiPins: List<String>,
     val serverPollSeconds: Int,
     val maxTrustedTimeStalenessMinutes: Int,
+    /** Apps, die auch während jeder Sperre offen bleiben (Android-Paketnamen), z. B. Telegram, Signal. */
+    val alwaysAllowedApps: List<String> = DEFAULT_ALLOWED_APPS,
 ) {
     fun effectiveDailyBudget(dow: Int): Int {
         if (dailyBudgetByWeekday.size == 7) {
@@ -71,8 +73,12 @@ data class LockConfig(
     val hasPin get() = pinHash.isNotEmpty()
 
     companion object {
+        /** Telegram (Play + Direkt-APK) und Signal – gilt, solange der Server nichts anderes schickt. */
+        val DEFAULT_ALLOWED_APPS = listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.thoughtcrime.securesms")
+
         fun fromJson(o: JSONObject): LockConfig {
             val wins = o.optJSONArray("windows") ?: JSONArray()
+            val allowed = o.optJSONArray("alwaysAllowedApps")
             val wb = o.optJSONArray("dailyBudgetByWeekday") ?: JSONArray()
             val pins = o.optJSONArray("tlsSpkiPins") ?: JSONArray()
             return LockConfig(
@@ -89,6 +95,8 @@ data class LockConfig(
                 tlsSpkiPins = (0 until pins.length()).map { pins.optString(it) }.filter { it.isNotBlank() },
                 serverPollSeconds = o.optInt("serverPollSeconds", 30),
                 maxTrustedTimeStalenessMinutes = o.optInt("maxTrustedTimeStalenessMinutes", 720),
+                alwaysAllowedApps = if (allowed == null) DEFAULT_ALLOWED_APPS
+                    else (0 until allowed.length()).map { allowed.optString(it).trim() }.filter { it.isNotEmpty() },
             )
         }
     }

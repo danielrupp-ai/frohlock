@@ -429,3 +429,30 @@ def test_android_simple_qr_has_no_code(client, tmp_path, monkeypatch):
     code = dbmod.query_one("SELECT code FROM pairing_codes")["code"]
     r = client.get(f"/admin/android/qr/{code}?einfach=1")
     assert "Einfacher QR-Code" in r.text and "Zurück zum normalen Code" in r.text
+
+
+def test_android_allowed_apps_default_and_admin(client):
+    import json as _json
+    import app.db as dbmod
+    with open(PUB_PATH, "rb") as fh:
+        pub = load_pem_public_key(fh.read())
+    _admin_login(client)
+    client.post("/admin/android/new", data={"device_name": "Handy"})
+    code = dbmod.query_one("SELECT code FROM pairing_codes")["code"]
+    ph = client.post("/devices/register", json={"pairingCode": code, "platform": "android"}).json()
+    hdr = {"Authorization": f"Bearer {ph['token']}"}
+    client.post(f"/devices/{ph['deviceId']}/config-draft", headers=hdr, json={"pinHash": "aA==", "pinSalt": "aA=="})
+    env = client.get(f"/devices/{ph['deviceId']}/config", headers=hdr).json()
+    cfg = _json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+    assert "org.thoughtcrime.securesms" in cfg["alwaysAllowedApps"] and "org.telegram.messenger" in cfg["alwaysAllowedApps"]
+
+    client.post(f"/devices/{ph['deviceId']}/heartbeat", headers=hdr, json={"platform": "android", "deviceOwner": False})
+    page = client.get(f"/admin/devices/{ph['deviceId']}").text
+    assert "Immer erlaubt" in page and 'name="m_org.telegram.messenger" checked' in page
+
+    r = client.post(f"/admin/devices/{ph['deviceId']}/allowed-apps",
+                    data={"m_org.thoughtcrime.securesms": "on", "extra": "com.whatsapp ungültig! de.schule.app"}, follow_redirects=False)
+    assert r.status_code == 303
+    env = client.get(f"/devices/{ph['deviceId']}/config?have=0", headers=hdr).json()
+    cfg = _json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+    assert cfg["alwaysAllowedApps"] == ["org.thoughtcrime.securesms", "com.whatsapp", "de.schule.app"]

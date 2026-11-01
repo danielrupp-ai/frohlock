@@ -247,6 +247,11 @@ class SetupActivity : Activity() {
                         "FrohLock schützt die Bildschirmzeit. Als Geräteadministrator kann die App nicht einfach gelöscht werden."))
             } catch (_: Exception) { openAppInfo() }
         }
+        item(de.froehlichdienste.frohlock.android.ForegroundApp.hasAccess(this), "Nutzungsdaten",
+            "Damit FrohLock erkennt, welche App offen ist: Telegram und Signal bleiben in der Sperre nutzbar, alles andere wird sofort " +
+            "wieder gesperrt. In der Liste FrohLock antippen und „Zugriff auf Nutzungsdaten“ einschalten.") {
+            try { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) } catch (_: Exception) { openAppInfo() }
+        }
         item(WeakGuard.notificationsAllowed(this), "Benachrichtigungen",
             "Für die freundliche Erinnerung kurz vor der Schlafenszeit.") {
             if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)

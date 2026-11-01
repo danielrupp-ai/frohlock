@@ -281,8 +281,12 @@ def device_detail(request: Request, device_id: str):
     is_android = ("platform" in keys and (dev["platform"] or "") == "android")
     others = [d for d in db.query("SELECT id, name, platform FROM devices WHERE id<>? ORDER BY name", (device_id,))]
 
+    allowed = draft.get("alwaysAllowedApps", configbuilder.DEFAULT_ALLOWED_APPS)
+    known_pkgs = {p for _, pkgs in configbuilder.KNOWN_MESSENGERS for p in pkgs}
     return templates.TemplateResponse("device.html", {
         "is_android": is_android,
+        "messengers": [{"name": n, "key": pkgs[0], "on": any(p in allowed for p in pkgs)} for n, pkgs in configbuilder.KNOWN_MESSENGERS],
+        "allowed_extra": ", ".join(p for p in allowed if p not in known_pkgs),
         "android_info": android.device_info(dev["device_info"] if "device_info" in keys else None),
         "android_update": android.apk_version(),
         "other_devices": others,
@@ -513,3 +517,24 @@ def copy_from(request: Request, device_id: str, source_id: str = Form(...)):
     name = configbuilder.copy_settings(source_id, device_id)
     db.audit(request.session["admin_user"], "settings-copy", device_id, f"von {name}" if name else "Quelle ohne Einstellungen")
     return RedirectResponse(f"/admin/devices/{device_id}?ok={'kopiert' if name else 'nichtskopiert'}", status_code=303)
+
+
+@router.post("/admin/devices/{device_id}/allowed-apps")
+async def set_allowed_apps(request: Request, device_id: str):
+    """Android: welche Apps auch während der Sperre offen bleiben (z. B. Telegram, Signal)."""
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    form = await request.form()
+    apps: list[str] = []
+    for name, pkgs in configbuilder.KNOWN_MESSENGERS:
+        if form.get(f"m_{pkgs[0]}"):
+            apps += pkgs
+    import re
+    for p in re.split(r"[\s,;]+", str(form.get("extra", "") or "")):
+        if re.fullmatch(r"[A-Za-z][\w]*(\.[A-Za-z_][\w]*)+", p) and p not in apps:
+            apps.append(p)
+    draft = _load_draft(device_id)
+    draft["alwaysAllowedApps"] = apps
+    v = configbuilder.save_draft(device_id, draft)
+    db.audit(request.session["admin_user"], "allowed-apps", device_id, ", ".join(apps) + f" v{v}")
+    return RedirectResponse(f"/admin/devices/{device_id}?ok=apps#apps", status_code=303)

@@ -94,6 +94,10 @@ class LockActivity : Activity() {
         col.addView(Ui.button(this, "🔑  Eltern-PIN", primary = false) {
             pinPanel.visibility = if (pinPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         })
+        // Immer erlaubt: Telegram, Signal … (Liste kommt aus dem Admin). Im einfachen Modus nur mit
+        // Nutzungsdaten-Erlaubnis – sonst könnte FrohLock sie nicht von anderen Apps unterscheiden.
+        messengerRow = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(messengerRow)
         if (DeviceOwner.hasTelephony(this)) {
             col.addView(Ui.button(this, "📞  Anrufen (Notfall, Mama, Papa)", primary = false) { openDialer() })
         }
@@ -131,8 +135,26 @@ class LockActivity : Activity() {
         }
     }
 
+    private lateinit var messengerRow: LinearLayout
+    private var messengerKey = ""
+
+    private fun refreshMessengers() {
+        val canUse = DeviceOwner.isDeviceOwner(this) || de.froehlichdienste.frohlock.android.ForegroundApp.hasAccess(this)
+        val apps = if (canUse) de.froehlichdienste.frohlock.android.AllowedApps.installedMessengers(this) else emptyList()
+        val key = apps.joinToString { it.first }
+        if (key == messengerKey) return
+        messengerKey = key
+        messengerRow.removeAllViews()
+        for ((pkg, label) in apps) {
+            messengerRow.addView(Ui.button(this, "💬  $label öffnen", primary = false) {
+                de.froehlichdienste.frohlock.android.AllowedApps.launch(this, pkg)
+            })
+        }
+    }
+
     private fun openDialer() {
-        callGraceUntilUptime = SystemClock.uptimeMillis() + 10 * 60_000
+        // Nur kurz: Wählen + Gespräch beginnen. Läuft das Gespräch, erkennt FrohLock das selbst.
+        callGraceUntilUptime = SystemClock.uptimeMillis() + 60_000
         try { startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
     }
 
@@ -142,6 +164,7 @@ class LockActivity : Activity() {
         lastVisibleUptime = SystemClock.uptimeMillis()
         callGraceUntilUptime = 0
         hideSystemBars()
+        refreshMessengers()
         if (!DeviceOwner.isDeviceOwner(this)) de.froehlichdienste.frohlock.android.WeakGuard.setOverlay(this, false)
         if (Guard.enforcer.decide().locked && DeviceOwner.isDeviceOwner(this) && !DeviceOwner.lockTaskActive(this)) {
             try { startLockTask() } catch (e: Exception) { Guard.audit.write("UMGEHUNG", "⚠ Sperr-Modus ließ sich nicht starten: ${e.javaClass.simpleName}") }
@@ -237,7 +260,7 @@ class LockActivity : Activity() {
     companion object {
         @Volatile var isResumed = false; private set
         @Volatile var lastVisibleUptime = 0L; private set
-        /** Nach „Anrufen" darf die Telefon-App 10 Min vorne bleiben. */
+        /** Nach „Anrufen" darf die Telefon-App 60 s vorne sein, bis das Gespräch läuft (danach Audio-Modus). */
         @Volatile var callGraceUntilUptime = 0L
         private val instances = mutableListOf<WeakReference<LockActivity>>()
 

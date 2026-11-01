@@ -26,6 +26,8 @@ import de.froehlichdienste.frohlock.ui.Ui
 object WeakGuard {
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var overlay: View? = null
+    /** Liegt das Overlay gerade sichtbar über allem? */
+    val isShowing: Boolean get() = overlay?.isAttachedToWindow == true
 
     fun canOverlay(ctx: Context) = Settings.canDrawOverlays(ctx)
 
@@ -40,6 +42,7 @@ object WeakGuard {
     fun missing(ctx: Context): List<String> = buildList {
         if (!canOverlay(ctx)) add("Über anderen Apps einblenden")
         if (!isAdminActive(ctx)) add("Geräteadministrator")
+        if (!ForegroundApp.hasAccess(ctx)) add("Nutzungsdaten (welche App offen ist)")
         if (!notificationsAllowed(ctx)) add("Benachrichtigungen")
     }
 

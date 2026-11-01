@@ -159,6 +159,8 @@ object Guard {
         configFile.writeText(env.toJson().toString())
         val firstPin = current?.hasPin != true && incoming.hasPin
         enforcer.setConfig(incoming)
+        // Erlaubte Apps können sich geändert haben → Sperr-Modus neu einrichten.
+        if (current?.alwaysAllowedApps != incoming.alwaysAllowedApps) DeviceOwner.configureLockTask(app)
         audit.write("CONFIG", "v${incoming.configVersion} übernommen (${incoming.windows.size} Sperrzeiten, Limit ${incoming.dailyBudgetMinutes} min)")
         if (firstPin) audit.write("SETUP", "Eltern-PIN vorhanden – Schutz ist jetzt aktiv")
         return incoming

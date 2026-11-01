@@ -20,5 +20,6 @@
 {% if flash == "auszeit" %}<div class="fl-flash">🛑 Auszeit geschickt – sie greift sofort bzw. beim nächsten Aufklappen. Mehrere Auszeiten werden zusammengezählt.</div>
 {% elif flash == "aufgehoben" %}<div class="fl-flash">✅ Auszeit aufgehoben.</div>
 {% elif flash == "kopiert" %}<div class="fl-flash">✅ Einstellungen übernommen – das Gerät holt sie sich beim nächsten Kontakt (meist in unter einer Minute).</div>
+{% elif flash == "apps" %}<div class="fl-flash">✅ Erlaubte Apps gespeichert – das Handy übernimmt sie in unter einer Minute.</div>
 {% elif flash == "nichtskopiert" %}<div class="fl-flash" style="background:#7b5a1f">⚠ Das gewählte Gerät hat noch keine Einstellungen – es wurde nichts übernommen.</div>{% endif %}
 {% endmacro %}
