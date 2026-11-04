@@ -49,6 +49,15 @@ beendet. Die Auszeit läuft nur, solange der Sperrbildschirm sichtbar ist.
 
 Bildschirmzeit zählt nur bei **Bildschirm an und entsperrt** (wie „Bildschirm an“ am Laptop).
 
+**Gegenprobe (ab 1.0.5):** Android schreibt selbst mit, wann der Bildschirm an und entsperrt war
+(Nutzungsdaten-Ereignisse). FrohLock vergleicht alle 2 Minuten und beim Start seinen eigenen Stand damit.
+Fehlen FrohLock ≥ 5 Minuten gegenüber Android (Dienst vom System beendet, ausgebremst, Bildschirm falsch als
+„aus“ gesehen), wird die Zeit **nachgezählt** (zählt aufs Limit, Protokoll `LUECKE ⚠`, Admin → „Auffälligkeiten“
+und Android-Karte „Gegenprobe heute“). Zeit in Telegram/Signal/Telefon *während einer Sperre* zählt nicht aufs
+Limit, wird aber im Admin ausgewiesen. Die Zeitzone ist fest (beim ersten Start gemerkt): stellt das Kind die
+Zone um, springt „heute“ nicht; ein zurückgedrehtes Datum setzt die Bildschirmzeit nicht zurück. Eltern übernehmen
+eine neue Zone über „Einstellungen 15 Min freigeben“.
+
 ## Freigeben
 
 - Am Sperrbildschirm: **Eltern-PIN** → 30 Min / 1 Std / 2 Std. Die **Master-PINs** gelten auch hier.

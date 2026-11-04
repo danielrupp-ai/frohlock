@@ -16,6 +16,19 @@ class RuntimeState {
     var usageDay = ""
     var usageSecondsToday = 0L
     val usageSegmentsToday = mutableListOf<UsageSegment>()
+    /** Sekunden, in denen FrohLock heute „Bildschirm an + entsperrt" gesehen hat (gezählt ODER gesperrt). */
+    var onSecondsToday = 0L
+    /** Davon in der Sperre in einer erlaubten App (Telegram, Signal, Telefon) – zählt nicht aufs Limit, wird aber gezeigt. */
+    var allowedInLockSecondsToday = 0L
+    /** Aus Androids eigenen Bildschirm-Ereignissen nachgezählte Zeit (FrohLock lief nicht oder sah den Bildschirm nicht). */
+    var missedSecondsToday = 0L
+    /** Gegenprobe: Stand von Android („Bildschirm an + entsperrt" seit Mitternacht) und von FrohLock beim letzten Abgleich. */
+    var ledgerBaseAndroidSeconds = -1L
+    var ledgerBaseOwnSeconds = 0L
+    /** Letzter Stand der Android-Gegenprobe (nur Anzeige im Admin). */
+    var ledgerAndroidSecondsToday = 0L
+    /** Tag, an dem zuletzt „Uhr lief rückwärts" gemeldet wurde (nur einmal je Tag). */
+    var backwardsDayWarned = ""
 
     var penaltySecondsRemaining = 0L
     var penaltyCount = 0
@@ -58,13 +71,45 @@ class RuntimeState {
         UsageTimeline.accrue(usageSegmentsToday, nowUnix, seconds)
     }
 
-    private fun rollDay(day: LocalDate) {
-        val d = day.toString()
-        if (usageDay != d) { usageDay = d; usageSecondsToday = 0; usageSegmentsToday.clear() }
+    /** Jede Sekunde „Bildschirm an + entsperrt" festhalten – auch in der Sperre (Basis für die Android-Gegenprobe). */
+    fun addOn(day: LocalDate, seconds: Int, lockedInAllowedApp: Boolean) {
+        rollDay(day)
+        onSecondsToday += seconds
+        if (lockedInAllowedApp) allowedInLockSecondsToday += seconds
     }
 
-    fun usageMinutes(day: LocalDate) = if (usageDay == day.toString()) (usageSecondsToday / 60).toInt() else 0
-    fun segments(day: LocalDate): List<UsageSegment> = if (usageDay == day.toString()) usageSegmentsToday else emptyList()
+    /** Verpasste Zeit nachzählen (Android sah den Bildschirm an, FrohLock nicht): zählt aufs Limit, ohne Uhrzeit-Abschnitt. */
+    fun addMissedUsage(day: LocalDate, seconds: Int) {
+        if (seconds <= 0) return
+        rollDay(day)
+        usageSecondsToday += seconds
+        onSecondsToday += seconds
+        missedSecondsToday += seconds
+    }
+
+    /**
+     * Neuer Tag → alles auf null. Liegt der „neue" Tag VOR dem gespeicherten (Uhr/Zeitzone zurückgedreht),
+     * wird NICHT zurückgesetzt – sonst gäbe es durch Zurückstellen frische Bildschirmzeit. Liefert true, wenn das passiert ist.
+     */
+    fun rollDay(day: LocalDate): Boolean {
+        val d = day.toString()
+        if (usageDay == d) return false
+        if (usageDay.isNotEmpty() && usageDay > d) return true
+        usageDay = d; usageSecondsToday = 0; usageSegmentsToday.clear()
+        onSecondsToday = 0; allowedInLockSecondsToday = 0; missedSecondsToday = 0
+        ledgerBaseAndroidSeconds = -1; ledgerBaseOwnSeconds = 0; ledgerAndroidSecondsToday = 0
+        return false
+    }
+
+    /** Gilt der gespeicherte Tag für [day]? (gleicher Tag – oder die Uhr steht hinter dem gespeicherten Tag.) */
+    private fun sameDay(day: LocalDate): Boolean { val d = day.toString(); return usageDay == d || (usageDay.isNotEmpty() && usageDay > d) }
+
+    fun usageMinutes(day: LocalDate) = if (sameDay(day)) (usageSecondsToday / 60).toInt() else 0
+    fun segments(day: LocalDate): List<UsageSegment> = if (sameDay(day)) usageSegmentsToday else emptyList()
+    fun onSeconds(day: LocalDate) = if (sameDay(day)) onSecondsToday else 0L
+    fun allowedInLockMinutes(day: LocalDate) = if (sameDay(day)) (allowedInLockSecondsToday / 60).toInt() else 0
+    fun missedMinutes(day: LocalDate) = if (sameDay(day)) (missedSecondsToday / 60).toInt() else 0
+    fun ledgerAndroidMinutes(day: LocalDate) = if (sameDay(day)) (ledgerAndroidSecondsToday / 60).toInt() else 0
 
     fun clearPenalty() { penaltySecondsRemaining = 0; penaltyCount = 0; penaltyTotalMinutes = 0 }
 
@@ -77,6 +122,13 @@ class RuntimeState {
         .put("usageDay", usageDay)
         .put("usageSecondsToday", usageSecondsToday)
         .put("usageSegmentsToday", JSONArray().also { a -> usageSegmentsToday.forEach { a.put(it.toJson()) } })
+        .put("onSecondsToday", onSecondsToday)
+        .put("allowedInLockSecondsToday", allowedInLockSecondsToday)
+        .put("missedSecondsToday", missedSecondsToday)
+        .put("ledgerBaseAndroidSeconds", ledgerBaseAndroidSeconds)
+        .put("ledgerBaseOwnSeconds", ledgerBaseOwnSeconds)
+        .put("ledgerAndroidSecondsToday", ledgerAndroidSecondsToday)
+        .put("backwardsDayWarned", backwardsDayWarned)
         .put("penaltySecondsRemaining", penaltySecondsRemaining)
         .put("penaltyCount", penaltyCount)
         .put("penaltyTotalMinutes", penaltyTotalMinutes)
@@ -101,6 +153,14 @@ class RuntimeState {
             o.optJSONArray("usageSegmentsToday")?.let { a ->
                 for (i in 0 until a.length()) usageSegmentsToday.add(UsageSegment.fromJson(a.getJSONObject(i)))
             }
+            // Vor 1.0.5 gab es die Felder nicht: Gesehenes = Gezähltes (kein falscher Sprung beim ersten Abgleich).
+            onSecondsToday = o.optLong("onSecondsToday", usageSecondsToday)
+            allowedInLockSecondsToday = o.optLong("allowedInLockSecondsToday")
+            missedSecondsToday = o.optLong("missedSecondsToday")
+            ledgerBaseAndroidSeconds = o.optLong("ledgerBaseAndroidSeconds", -1)
+            ledgerBaseOwnSeconds = o.optLong("ledgerBaseOwnSeconds")
+            ledgerAndroidSecondsToday = o.optLong("ledgerAndroidSecondsToday")
+            backwardsDayWarned = o.optString("backwardsDayWarned", "")
             penaltySecondsRemaining = o.optLong("penaltySecondsRemaining")
             penaltyCount = o.optInt("penaltyCount")
             penaltyTotalMinutes = o.optInt("penaltyTotalMinutes")

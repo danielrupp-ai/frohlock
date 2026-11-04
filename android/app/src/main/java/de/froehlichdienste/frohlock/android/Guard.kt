@@ -41,12 +41,38 @@ data class Pairing(
  * Vertrauenszeit: System-Uhr (vom Gerät erzwungen automatisch) + Korrektur aus dem Date-Header
  * des Servers + „Boden", unter den die Zeit nie zurückläuft (Schutz gegen Uhr-Zurückstellen offline).
  */
-class AndroidClock(private val floorFile: File) : TrustedClock {
+class AndroidClock(private val floorFile: File, private val zoneFile: File? = null) : TrustedClock {
     @Volatile private var offsetMs = 0L
     @Volatile private var floorMs = try { floorFile.readText().trim().toLong() } catch (_: Exception) { 0L }
     private var lastPersisted = floorMs
 
-    override val zone: ZoneId get() = ZoneId.systemDefault()
+    /**
+     * Feste Zeitzone: die beim ersten Start gemerkte. Stellt das Kind die Zone des Handys um (im einfachen
+     * Schutz möglich), würde sonst „heute" wechseln und die Bildschirmzeit auf null springen.
+     * Eltern können die neue Zone übernehmen, solange die Einstellungen freigegeben sind (adoptSystemZone).
+     */
+    @Volatile private var fixedZone: ZoneId = loadZone()
+
+    override val zone: ZoneId get() = fixedZone
+
+    private fun loadZone(): ZoneId {
+        val stored = try { zoneFile?.readText()?.trim()?.takeIf { it.isNotEmpty() }?.let { ZoneId.of(it) } } catch (_: Exception) { null }
+        if (stored != null) return stored
+        val z = ZoneId.systemDefault()
+        try { zoneFile?.writeText(z.id) } catch (_: Exception) { }
+        return z
+    }
+
+    /** Weicht die Zone des Systems von der festen ab? (null = alles gleich) */
+    fun systemZoneMismatch(): String? = ZoneId.systemDefault().takeIf { it != fixedZone }?.id
+
+    fun adoptSystemZone() {
+        fixedZone = ZoneId.systemDefault()
+        try { zoneFile?.writeText(fixedZone.id) } catch (_: Exception) { }
+    }
+
+    /** Korrektur gegenüber der Geräteuhr (Androids Ereignis-Zeitstempel laufen mit der Geräteuhr). */
+    val offsetMillis get() = offsetMs
 
     @Synchronized
     override fun nowMillis(): Long {
@@ -96,7 +122,7 @@ object Guard {
         if (initialized) return
         app = ctx.applicationContext
         audit = FileAudit(File(dir, "audit.log"))
-        clock = AndroidClock(File(dir, "timefloor"))
+        clock = AndroidClock(File(dir, "timefloor"), File(dir, "zone"))
         state = try { RuntimeState.fromJson(JSONObject(stateFile.readText())) } catch (_: Exception) { RuntimeState() }
         enforcer = Enforcer(clock, audit, state, { saveState() }, deviceWord())
         enforcer.setConfig(loadConfig())

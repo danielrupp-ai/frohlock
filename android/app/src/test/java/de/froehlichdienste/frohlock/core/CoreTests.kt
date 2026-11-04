@@ -148,4 +148,97 @@ class CoreTests {
         assertTrue(r.forcedLock); assertEquals(42L, r.penaltySecondsRemaining)
         assertEquals(listOf("a.b"), r.suspendedPackages); assertEquals(1, r.usageSegmentsToday.size)
     }
+
+    // ---------- 1.0.5: Gegenprobe mit Android, Tag rückwärts, Messenger-Zeit ----------
+
+    @Test fun screenLedgerCountsOnlyInteractiveAndUnlocked() {
+        val L = ScreenLedger
+        fun ev(t: Long, type: Int) = ScreenLedger.Ev(t, type)
+        val ev = listOf(
+            ev(1_000, L.SCREEN_ON), ev(1_000, L.KEYGUARD_SHOWN),   // an, aber Sperrbildschirm
+            ev(11_000, L.KEYGUARD_HIDDEN),                          // ab 11 s wirklich benutzbar
+            ev(71_000, L.SCREEN_OFF),                               // 60 s benutzt
+            ev(200_000, L.SCREEN_ON), ev(200_000, L.KEYGUARD_SHOWN), // nur Uhrzeit geguckt
+            ev(205_000, L.SCREEN_OFF),
+        )
+        assertEquals(60L, L.interactiveUnlockedSeconds(ev, 0, 300_000))
+        // Zustand vor dem Fenster zählt: ab 11 s offen, Fenster beginnt bei 31 s → 40 s
+        assertEquals(40L, L.interactiveUnlockedSeconds(ev, 31_000, 300_000))
+        // Ohne jedes Sperrbildschirm-Ereignis (Gerät ohne Sperre): „an" allein zählt
+        val noKg = listOf(ev(0, L.SCREEN_ON), ev(30_000, L.SCREEN_OFF))
+        assertEquals(30L, L.interactiveUnlockedSeconds(noKg, 0, 100_000))
+        // Unbekannter Anfangszustand = aus
+        assertEquals(0L, L.interactiveUnlockedSeconds(emptyList(), 0, 100_000))
+    }
+
+    @Test fun crossCheckAddsOnlyGrowthSinceLastCheckAndOnlyAboveThreshold() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 4, 12, 0))
+        val audit = MemAudit()
+        val st = RuntimeState()
+        val en = Enforcer(clock, audit, st, {})
+        en.setConfig(cfg(budget = 60))
+        en.accrueUsage(600); en.accrueOn(600, false)   // FrohLock zählte 10 Min (Dienst ruft beides je Takt)
+        assertEquals(10, en.todayUsageMinutes())
+        // Erster Abgleich mitten am Tag: nur Basis setzen, nie nachzählen (Update mitten am Tag).
+        assertEquals(0, en.crossCheck(3_600))
+        // Android wächst um 20 Min, FrohLock sah nur 2 Min → 18 Min nachgezählt
+        en.accrueUsage(120); en.accrueOn(120, false)
+        assertEquals(18, en.crossCheck(3_600 + 1_200))
+        assertEquals(10 + 2 + 18, en.todayUsageMinutes())
+        assertEquals(18, en.todayMissedMinutes())
+        assertTrue(audit.lines.any { it.startsWith("LUECKE\t⚠") && it.contains("nachgezählt") })
+        // Kleine Takt-Abweichung (< 5 Min) wird ignoriert
+        en.accrueUsage(100); en.accrueOn(100, false)
+        assertEquals(0, en.crossCheck(3_600 + 1_200 + 100 + 200))
+        assertEquals(31, en.todayUsageMinutes())
+        // Nachgezählte Zeit zählt aufs Limit
+        en.accrueUsage(30 * 60)
+        assertTrue(en.decide().locked)
+    }
+
+    @Test fun backwardsDayDoesNotResetUsage() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 4, 20, 0))
+        val audit = MemAudit()
+        val st = RuntimeState()
+        val en = Enforcer(clock, audit, st, {})
+        en.setConfig(cfg(budget = 60))
+        en.accrueUsage(50 * 60)
+        assertEquals(50, en.todayUsageMinutes())
+        // Uhr/Zeitzone zurückgedreht: „gestern"
+        clock.t = LocalDateTime.of(2026, 11, 3, 23, 0)
+        assertEquals(50, en.todayUsageMinutes())
+        en.accrueUsage(10 * 60)
+        assertEquals(60, en.todayUsageMinutes())
+        assertTrue(en.decide().locked)
+        assertEquals(1, audit.lines.count { it.contains("NICHT zurückgesetzt") })
+        // Echter neuer Tag setzt zurück
+        clock.t = LocalDateTime.of(2026, 11, 5, 8, 0)
+        assertEquals(0, en.todayUsageMinutes())
+        assertFalse(en.decide().locked)
+    }
+
+    @Test fun allowedAppTimeInLockIsReportedButNotCounted() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 4, 12, 0))
+        val st = RuntimeState()
+        val en = Enforcer(clock, MemAudit(), st, {})
+        en.setConfig(cfg(budget = 60))
+        en.accrueOn(300, lockedInAllowedApp = true)
+        en.accrueOn(120, lockedInAllowedApp = false)
+        assertEquals(5, en.todayAllowedInLockMinutes())
+        assertEquals(7, en.todayOnMinutes())
+        assertEquals(0, en.todayUsageMinutes())
+    }
+
+    @Test fun stateKeepsNewCountersAndDefaultsOnSecondsForOldState() {
+        val s = RuntimeState()
+        s.addUsage(java.time.LocalDate.of(2026, 11, 4), 1000, 600)
+        s.addOn(java.time.LocalDate.of(2026, 11, 4), 700, true)
+        s.addMissedUsage(java.time.LocalDate.of(2026, 11, 4), 300)
+        val r = RuntimeState.fromJson(JSONObject(s.toJson().toString()))
+        assertEquals(900L, r.usageSecondsToday); assertEquals(1000L, r.onSecondsToday)
+        assertEquals(700L, r.allowedInLockSecondsToday); assertEquals(300L, r.missedSecondsToday)
+        // Zustand aus 1.0.4 (ohne die Felder): Gesehenes = Gezähltes
+        val old = RuntimeState.fromJson(JSONObject("""{"usageDay":"2026-11-04","usageSecondsToday":1234}"""))
+        assertEquals(1234L, old.onSecondsToday); assertEquals(-1L, old.ledgerBaseAndroidSeconds)
+    }
 }

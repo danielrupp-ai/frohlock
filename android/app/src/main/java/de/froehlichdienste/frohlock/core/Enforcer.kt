@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -209,8 +210,60 @@ class Enforcer(
 
     fun accrueUsage(seconds: Int) = synchronized(lock) {
         if (config == null) return
-        state.addUsage(localNow().toLocalDate(), nowUnix(), seconds)
+        val day = localNow().toLocalDate()
+        warnIfBackwards(day)
+        state.addUsage(day, nowUnix(), seconds)
     }
+
+    /** Jede Sekunde mit Bildschirm an festhalten – gezählt oder gesperrt (Basis der Android-Gegenprobe). */
+    fun accrueOn(seconds: Int, lockedInAllowedApp: Boolean) = synchronized(lock) {
+        if (config == null) return
+        val day = localNow().toLocalDate()
+        warnIfBackwards(day)
+        state.addOn(day, seconds, lockedInAllowedApp)
+    }
+
+    private fun warnIfBackwards(day: LocalDate) {
+        if (!state.rollDay(day)) return
+        if (state.backwardsDayWarned == state.usageDay) return
+        state.backwardsDayWarned = state.usageDay
+        audit.write("UMGEHUNG", "⚠ Datum des Geräts steht auf $day, FrohLock hatte schon ${state.usageDay} – " +
+            "Bildschirmzeit wird NICHT zurückgesetzt, sondern weitergezählt")
+    }
+
+    /**
+     * Gegenprobe mit Androids Bildschirm-Ereignissen: [androidOnSeconds] = „Bildschirm an + entsperrt" seit
+     * Mitternacht laut Android. Fehlt FrohLock gegenüber dem Zuwachs von Android ≥ 5 Min, wird nachgezählt.
+     * Liefert die nachgezählten Minuten (0 = nichts zu tun).
+     */
+    fun crossCheck(androidOnSeconds: Long): Int = synchronized(lock) {
+        if (config == null || androidOnSeconds < 0) return 0
+        val day = localNow().toLocalDate()
+        warnIfBackwards(day)
+        state.ledgerAndroidSecondsToday = androidOnSeconds
+        val own = state.onSecondsToday
+        val missed = ScreenLedger.missedSince(androidOnSeconds, state.ledgerBaseAndroidSeconds, own, state.ledgerBaseOwnSeconds)
+        if (missed > 0) {
+            state.addMissedUsage(day, missed.toInt())
+            audit.write("LUECKE", "⚠ Android meldet ${UsageTimeline.fmtMinutes((androidOnSeconds / 60).toInt())} Bildschirm an, " +
+                "FrohLock sah nur ${UsageTimeline.fmtMinutes((own / 60).toInt())} – " +
+                "${UsageTimeline.fmtMinutes((missed / 60).toInt())} nachgezählt (Schutz lief nicht oder wurde ausgebremst)")
+        }
+        state.ledgerBaseAndroidSeconds = androidOnSeconds
+        state.ledgerBaseOwnSeconds = state.onSecondsToday
+        save()
+        (missed / 60).toInt()
+    }
+
+    fun todayMissedMinutes(): Int = synchronized(lock) { state.missedMinutes(localNow().toLocalDate()) }
+    fun todayAllowedInLockMinutes(): Int = synchronized(lock) { state.allowedInLockMinutes(localNow().toLocalDate()) }
+    fun todayOnMinutes(): Int = synchronized(lock) { (state.onSeconds(localNow().toLocalDate()) / 60).toInt() }
+    fun todayAndroidOnMinutes(): Int = synchronized(lock) { state.ledgerAndroidMinutes(localNow().toLocalDate()) }
+    /** Mitternacht des heutigen Tages (Vertrauenszeit, feste Zone) in Millisekunden – Anfang der Gegenprobe. */
+    fun todayStartMillis(): Long = synchronized(lock) {
+        localNow().toLocalDate().atStartOfDay(clock.zone).toInstant().toEpochMilli()
+    }
+    fun nowMillis(): Long = clock.nowMillis()
 
     // ---------- Anzeige ----------
 

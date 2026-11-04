@@ -47,6 +47,21 @@
     <tr><td>Erkennt offene App (Nutzungsdaten)</td><td>{% if android_info.get("usageAccess") %}<span style="color:#69f0ae">✓ ja</span>
       {% else %}<span style="color:#ff8a80">⚠ nein – Telegram/Signal in der Sperre gehen dann nicht, und Umgehungen werden später erkannt</span>{% endif %}</td></tr>
     {% endif %}
+    {% if android_info.get("androidOnMinutes") is not none and "onMinutes" in android_info %}
+    <tr><td>Gegenprobe heute (Android ↔ FrohLock)</td><td>
+      Android selbst sah den Bildschirm <b>{{ android_info.get("androidOnMinutes", 0) }} Min</b> an und entsperrt,
+      FrohLock sah <b>{{ android_info.get("onMinutes", 0) }} Min</b>
+      {% if android_info.get("allowedInLockMinutes", 0) > 0 %}<span class="muted">(davon {{ android_info.get("allowedInLockMinutes") }} Min während einer Sperre in Telegram/Signal/Telefon – zählt nicht aufs Limit)</span>{% endif %}.
+      {% if android_info.get("missedMinutes", 0) > 0 %}<br><span style="color:#ffab40">⚠ {{ android_info.get("missedMinutes") }} Min nachgezählt</span>
+        <span class="muted">– FrohLock lief zwischendurch nicht oder sah den Bildschirm nicht; die Zeit zählt trotzdem aufs Limit.</span>
+      {% elif android_info.get("androidOnMinutes", 0) - android_info.get("onMinutes", 0) >= 5 %}<br><span style="color:#ffab40">⚠ Android sah mehr als FrohLock</span> <span class="muted">– wird beim nächsten Abgleich nachgezählt.</span>
+      {% else %}<br><span style="color:#69f0ae">✓ stimmt überein</span> <span class="muted">– FrohLock hat nichts verpasst (Abgleich alle 2 Minuten).</span>{% endif %}
+    </td></tr>
+    {% endif %}
+    {% if android_info.get("zoneMismatch") %}
+    <tr><td>Zeitzone</td><td><span style="color:#ff8a80">⚠ Handy steht auf {{ android_info.get("zoneMismatch") }}</span>
+      <span class="muted">– FrohLock rechnet weiter in {{ android_info.get("zone", "") }}, damit „heute“ nicht springt. Übernehmen: Eltern-Bereich am Handy → Einstellungen 15 Min freigeben.</span></td></tr>
+    {% endif %}
     {% if dev["relaxed_until"] and dev["relaxed_until"] > now %}
     <tr><td>Einstellungen freigeschaltet</td><td style="color:#ffab40">ja, noch {{ ((dev["relaxed_until"] - now) // 60) + 1 }} Min (von Eltern am Gerät)</td></tr>
     {% endif %}

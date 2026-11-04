@@ -42,6 +42,10 @@ class GuardService : Service() {
     private var lastBypassAudit = 0L
     private var lastNotifText = ""
     private var lastSave = 0L
+    private var lastCrossCheck = 0L
+    private var lastZoneWarned = ""
+    /** Kind ist gerade in der Sperre in einer erlaubten App (Telegram, Signal, Telefon) – zählt nicht aufs Limit. */
+    @Volatile private var lockedInAllowed = false
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
@@ -72,6 +76,8 @@ class GuardService : Service() {
                 val miss = WeakGuard.missing(this)
                 if (miss.isNotEmpty()) Guard.audit.write("UMGEHUNG", "⚠ Einfacher Schutz – es fehlt: ${miss.joinToString(", ")}")
             }
+            // Gleich beim Start gegenprüfen: lief FrohLock nicht, hat Android trotzdem mitgeschrieben.
+            crossCheck()
             loop()
         }
         net.scheduleWithFixedDelay({ netRound(force = false) }, 2, 10, TimeUnit.SECONDS)
@@ -136,6 +142,7 @@ class GuardService : Service() {
         val enforcing = d.locked && !settingUp
         lastLocked = enforcing
         var lockVisible = false
+        lockedInAllowed = false
         if (enforcing) {
             DeviceOwner.suspendApps(this, true)
             lockVisible = if (owner) enforceOwner(on) else enforceWeak(on)
@@ -147,6 +154,10 @@ class GuardService : Service() {
                 if (on && dt > 0) e.accrueUsage(dt)
             }
         }
+        // Jede Sekunde „Bildschirm an" merken (gezählt oder gesperrt) – Basis für die Gegenprobe mit Android.
+        if (on && dt > 0) e.accrueOn(dt, enforcing && lockedInAllowed)
+        if (up - lastCrossCheck > 120_000) { lastCrossCheck = up; crossCheck() }
+        checkZone()
         // Auszeit läuft nur ab, solange das Kind sie wirklich vor sich sieht (nicht im Spiel, nicht in Telegram).
         if (dt > 0) e.tickPenalty(dt, on && lockVisible)
 
@@ -173,7 +184,7 @@ class GuardService : Service() {
     /** Voller Schutz: Im Sperr-Modus kann nur Erlaubtes vorne sein (Telegram, Signal, Telefon, Wecker). */
     private fun enforceOwner(on: Boolean): Boolean {
         if (LockActivity.isResumed) return true
-        if (DeviceOwner.lockTaskActive(this)) return false        // Kind ist in einer erlaubten App
+        if (DeviceOwner.lockTaskActive(this)) { lockedInAllowed = true; return false }   // Kind ist in einer erlaubten App
         if (on) relaunchLock()
         val now = SystemClock.uptimeMillis()
         val hiddenFor = now - LockActivity.lastVisibleUptime
@@ -202,7 +213,7 @@ class GuardService : Service() {
         // Ohne Nutzungsdaten weiß FrohLock nicht, was vorne ist: dann nur echte Telefonate und die
         // ersten 60 s nach „Anrufen" frei lassen – Messenger brauchen die Nutzungsdaten-Erlaubnis.
         val free = inAllowed || (fg == null && (CallState.busy(this) || now < LockActivity.callGraceUntilUptime))
-        if (free) { WeakGuard.setOverlay(this, false); outsideSince = 0; return false }
+        if (free) { lockedInAllowed = true; WeakGuard.setOverlay(this, false); outsideSince = 0; return false }
 
         WeakGuard.setOverlay(this, true)
         if (!on) { outsideSince = 0; return WeakGuard.isShowing }
@@ -239,6 +250,38 @@ class GuardService : Service() {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
     } catch (_: Exception) { pkg }
 
+    /**
+     * Gegenprobe: Androids eigene Bildschirm-Ereignisse (seit Mitternacht) gegen das, was FrohLock gesehen hat.
+     * Fehlt FrohLock ≥ 5 Min, wird nachgezählt und der Admin sieht es unter „Auffälligkeiten".
+     */
+    private fun crossCheck() {
+        val e = Guard.enforcer
+        if (!e.isConfigured) return
+        // Androids Zeitstempel laufen mit der Geräteuhr – Mitternacht der Vertrauenszeit darauf umrechnen.
+        val dayStartWall = e.todayStartMillis() - Guard.clock.offsetMillis
+        val android = ScreenEvents.interactiveUnlockedSecondsSince(this, dayStartWall)
+        if (android < 0) return
+        val missed = e.crossCheck(android)
+        if (missed > 0) {
+            Guard.saveState()
+            net.execute { netRound(force = true) }
+        }
+    }
+
+    /** Zeitzone des Handys umgestellt? FrohLock rechnet fest in der gemerkten Zone; bei Eltern-Freigabe übernehmen. */
+    private fun checkZone() {
+        val other = Guard.clock.systemZoneMismatch() ?: run { lastZoneWarned = ""; return }
+        if (isRelaxed()) {
+            Guard.clock.adoptSystemZone()
+            Guard.audit.write("POLICY", "Neue Zeitzone übernommen (Eltern-Freigabe): $other")
+            return
+        }
+        if (lastZoneWarned == other) return
+        lastZoneWarned = other
+        Guard.audit.write("UMGEHUNG", "⚠ Zeitzone des Handys auf $other umgestellt – FrohLock rechnet weiter in ${Guard.clock.zone.id} " +
+            "(Eltern-Bereich → Einstellungen freigeben, dann wird die neue Zone übernommen)")
+    }
+
     /** Lief FrohLock nicht, obwohl das Gerät wach war? (Prozess beendet – z. B. durch das System.) */
     private fun detectGap() {
         val st = Guard.state
@@ -248,7 +291,7 @@ class GuardService : Service() {
         val awakeGap = (SystemClock.uptimeMillis() - st.lastTickUptimeMs) / 1000
         if (sameBoot && awakeGap > 120) {
             Guard.audit.write("LUECKE", "⚠ FrohLock lief nicht ${Guard.enforcer.localTime(st.lastTickWallUnix)}–${Guard.enforcer.localTime(nowWall)} " +
-                "(${awakeGap / 60} Min wach) – Bildschirmzeit in dieser Zeit nicht gezählt")
+                "(${awakeGap / 60} Min wach) – Bildschirmzeit wird aus Androids Aufzeichnung nachgezählt")
         } else if (!sameBoot) {
             Guard.audit.write("DIENST", "Gerät wurde neu gestartet (zuletzt aktiv ${Guard.enforcer.localTime(st.lastTickWallUnix)})")
         }
@@ -372,6 +415,13 @@ class GuardService : Service() {
                     .put("autoUpdate", Updater.canUpdateSilently(ctx))
                     .put("installer", Updater.installerOfRecord(ctx) ?: "")
                     .put("allowedApps", org.json.JSONArray(AllowedApps.installedMessengers(ctx).map { it.second }))
+                    // Gegenprobe für den Admin: was Android sah, was FrohLock sah, was nachgezählt wurde.
+                    .put("onMinutes", Guard.enforcer.todayOnMinutes())
+                    .put("androidOnMinutes", Guard.enforcer.todayAndroidOnMinutes())
+                    .put("missedMinutes", Guard.enforcer.todayMissedMinutes())
+                    .put("allowedInLockMinutes", Guard.enforcer.todayAllowedInLockMinutes())
+                    .put("zone", Guard.clock.zone.id)
+                    .put("zoneMismatch", Guard.clock.systemZoneMismatch() ?: "")
                     .put("missing", org.json.JSONArray(if (DeviceOwner.isDeviceOwner(ctx)) emptyList() else WeakGuard.missing(ctx))))
                 .put("relaxedUntilUnix", Guard.state.relaxedUntilUnix)
                 .put("lockVisible", LockActivity.isResumed || WeakGuard.isShowing)

@@ -110,7 +110,9 @@ class MainActivity : Activity() {
         state.setTextColor(if (!e.isConfigured) 0xDDFFFFFF.toInt() else if (d.locked) Ui.WARN else Ui.GOOD)
         val used = e.todayUsageMinutes()
         val budget = e.todayBudgetMinutes()
-        usage.text = "Bildschirmzeit heute: ${UsageTimeline.fmtMinutes(used)}" + if (budget > 0) " von ${UsageTimeline.fmtMinutes(budget)}" else ""
+        val missed = e.todayMissedMinutes()
+        usage.text = "Bildschirmzeit heute: ${UsageTimeline.fmtMinutes(used)}" + (if (budget > 0) " von ${UsageTimeline.fmtMinutes(budget)}" else "") +
+            (if (missed > 0) "\n(davon ${UsageTimeline.fmtMinutes(missed)} nachgezählt – FrohLock lief zwischendurch nicht)" else "")
         val segs = e.todaySegments()
         timeline.segments = segs
         timeline.nowMinute = LocalTime.now().let { it.hour * 60 + it.minute }
