@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private lateinit var schedule: TextView
     private lateinit var left: TextView
     private lateinit var updateCard: LinearLayout
+    private lateinit var updateTitle: TextView
     private lateinit var updateMsg: TextView
 
     private val refresher = object : Runnable { override fun run() { refresh(); ui.postDelayed(this, 5000) } }
@@ -60,7 +61,8 @@ class MainActivity : Activity() {
 
         // Ohne Geräte-Verwaltung: einmal bestätigen, danach aktualisiert sich FrohLock von selbst.
         updateCard = Ui.card(this).apply {
-            addView(Ui.text(this@MainActivity, "Automatische Updates einrichten", 18f, Ui.ACCENT, bold = true))
+            updateTitle = Ui.text(this@MainActivity, "Automatische Updates einrichten", 18f, Ui.ACCENT, bold = true)
+            addView(updateTitle)
             addView(Ui.text(this@MainActivity, "Einmal tippen und „Aktualisieren“ bestätigen (fragt Android nach der Quelle: " +
                 "FrohLock zulassen, zurück, nochmal tippen). Danach kommen alle Updates von selbst.", 14f, 0xCCFFFFFF.toInt()))
             updateMsg = Ui.text(this@MainActivity, "", 14f, Ui.WARN)
@@ -97,8 +99,10 @@ class MainActivity : Activity() {
     private fun refresh() {
         val e = Guard.enforcer
         setupBanner.visibility = if (e.isConfigured) View.GONE else View.VISIBLE
+        val pendingUpdate = de.froehlichdienste.frohlock.android.Updater.pendingConfirm != null || Guard.state.silentUpdateBlocked
         updateCard.visibility = if (Guard.pairing()?.registered == true &&
-            !de.froehlichdienste.frohlock.android.Updater.canUpdateSilently(this)) View.VISIBLE else View.GONE
+            (pendingUpdate || !de.froehlichdienste.frohlock.android.Updater.canUpdateSilently(this))) View.VISIBLE else View.GONE
+        updateTitle.text = if (pendingUpdate) "Neue FrohLock-Version installieren" else "Automatische Updates einrichten"
         val d = e.decide()
         state.text = when {
             !e.isConfigured -> "Noch nicht eingerichtet"

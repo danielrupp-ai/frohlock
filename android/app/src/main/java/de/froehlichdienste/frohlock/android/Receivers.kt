@@ -80,6 +80,7 @@ class BootReceiver : BroadcastReceiver() {
                 if (Updater.canUpdateSilently(ctx)) " – künftige Updates automatisch" else "")
             try { ctx.getSystemService(NotificationManager::class.java).cancel(4) } catch (_: Exception) { }
             Guard.state.lastUpdatePromptUnix = 0   // neue Version: Wartezeit für das nächste Angebot zurücksetzen
+            Guard.state.silentUpdateBlocked = false  // beim nächsten Update erst wieder still versuchen
             Guard.saveState()
         }
         if (Guard.pairing() != null || DeviceOwner.isDeviceOwner(ctx)) GuardService.start(ctx)

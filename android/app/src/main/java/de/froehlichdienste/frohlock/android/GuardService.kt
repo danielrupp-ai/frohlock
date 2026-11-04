@@ -412,7 +412,7 @@ class GuardService : Service() {
                     .put("overlay", WeakGuard.canOverlay(ctx))
                     .put("deviceAdmin", WeakGuard.isAdminActive(ctx))
                     .put("usageAccess", ForegroundApp.hasAccess(ctx))
-                    .put("autoUpdate", Updater.canUpdateSilently(ctx))
+                    .put("autoUpdate", Updater.canUpdateSilently(ctx) && !Guard.state.silentUpdateBlocked)
                     .put("installer", Updater.installerOfRecord(ctx) ?: "")
                     .put("allowedApps", org.json.JSONArray(AllowedApps.installedMessengers(ctx).map { it.second }))
                     // Gegenprobe für den Admin: was Android sah, was FrohLock sah, was nachgezählt wurde.

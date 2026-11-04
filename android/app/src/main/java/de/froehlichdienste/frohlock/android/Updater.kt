@@ -72,9 +72,10 @@ object Updater {
         val now = System.currentTimeMillis()
         if (runningSince > 0 && now - runningSince < DEADLINE_MS + 60_000) return
         // Ohne Geräte-Verwaltung muss ein Mensch „Installieren" tippen – höchstens alle 6 Stunden anbieten,
-        // sonst käme bei jedem Abruf (alle 30 s) ein neuer Download und Dialog.
-        val silent = canUpdateSilently(ctx)
-        if (!force && !silent && now / 1000 - Guard.state.lastUpdatePromptUnix < 6 * 3600) return
+        // sonst käme bei jedem Abruf (alle 30 s) ein neuer Download und Dialog. Die Wartezeit gilt auch nach
+        // einer fehlgeschlagenen stillen Installation (sonst lädt FrohLock alle 30 s neu – 1.0.4-Lehre).
+        val silent = canUpdateSilently(ctx) && !Guard.state.silentUpdateBlocked
+        if (!force && now / 1000 - Guard.state.lastUpdatePromptUnix < 6 * 3600) return
         if (runningSince > 0) Guard.audit.write("UPDATE", "⚠ Hängendes Update nach ${(now - runningSince) / 60_000} Min aufgegeben – neuer Versuch")
         runningSince = now
         try {
@@ -97,7 +98,7 @@ object Updater {
             Guard.audit.write("UPDATE", if (silent) "Installiere ${m.version} automatisch …"
                 else "${m.version} bereit – einmal am Gerät bestätigen, danach kommen Updates automatisch")
             if (!silent && !force) { Guard.state.lastUpdatePromptUnix = now / 1000; Guard.saveState() }
-            install(ctx, apk)
+            install(ctx, apk, requireUser = !silent)
         } catch (e: Exception) {
             Guard.audit.write("UPDATE", "Fehler: ${e.javaClass.simpleName} ${e.message ?: ""}".trim())
         } finally {
@@ -130,11 +131,12 @@ object Updater {
         }
     }
 
-    private fun install(ctx: Context, apk: File) {
+    private fun install(ctx: Context, apk: File, requireUser: Boolean) {
         val installer = ctx.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(ctx.packageName)
-        if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(
+            if (requireUser) PackageInstaller.SessionParams.USER_ACTION_REQUIRED else PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         // Ab Android 14: Update-Hoheit beanspruchen – künftige Updates nur noch über FrohLock selbst.
         if (Build.VERSION.SDK_INT >= 34) params.setRequestUpdateOwnership(true)
         val id = installer.createSession(params)
@@ -168,10 +170,21 @@ class InstallResultReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_SUCCESS -> { Updater.pendingConfirm = null; Guard.audit.write("UPDATE", "Installiert ✓") }
             else -> {
                 Updater.userInitiated = false
+                val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
+                if (msg.contains("VERIFICATION", ignoreCase = true) && !Guard.state.silentUpdateBlocked) {
+                    // Play Protect / Family Link lässt keine Installation ohne Menschen zu (Samsung A05, 04.11.):
+                    // ab jetzt mit Bestätigung – in 1 Min erneut, dann kommt die Benachrichtigung „FrohLock-Update".
+                    Guard.state.silentUpdateBlocked = true
+                    Guard.state.lastUpdatePromptUnix = System.currentTimeMillis() / 1000 - 6 * 3600 + 60
+                    Guard.saveState()
+                    Guard.audit.write("UPDATE", "⚠ Android lässt die stille Installation nicht zu ($msg) – " +
+                        "nächster Versuch gleich mit Bestätigung am Gerät (Benachrichtigung „FrohLock-Update“ antippen)")
+                    return
+                }
                 // Abgebrochen/abgelehnt: bald wieder anbieten statt 6 Stunden zu warten.
                 Guard.state.lastUpdatePromptUnix = System.currentTimeMillis() / 1000 - 5 * 3600 - 30 * 60
                 Guard.saveState()
-                Guard.audit.write("UPDATE", "⚠ Installation nicht abgeschlossen ($status): ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""} – neuer Versuch in 30 Min")
+                Guard.audit.write("UPDATE", "⚠ Installation nicht abgeschlossen ($status): $msg – neuer Versuch in 30 Min")
             }
         }
     }
