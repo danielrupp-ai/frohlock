@@ -20,6 +20,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import de.froehlichdienste.frohlock.BuildConfig
 import de.froehlichdienste.frohlock.R
+import de.froehlichdienste.frohlock.core.ForegroundRule
 import de.froehlichdienste.frohlock.ui.LockActivity
 import de.froehlichdienste.frohlock.ui.MainActivity
 import de.froehlichdienste.frohlock.ui.SetupActivity
@@ -205,11 +206,14 @@ class GuardService : Service() {
         val now = SystemClock.uptimeMillis()
         if (LockActivity.isResumed) { WeakGuard.setOverlay(this, false); outsideSince = 0; return true }
         val fg = ForegroundApp.current(this)
+        // System-Dialog vorne (Berechtigung, Teilen, Fotoauswahl)? Dann zählt die echte App darunter –
+        // sonst wäre „Video starten, Dialog aufklappen, weiterschauen" ein Schlupfloch (1.0.6).
+        val real = ForegroundRule.effective(fg, ForegroundApp.lastReal, AllowedApps.SYSTEM)
         // Eigene App zählt NICHT als erlaubt: außer dem Sperrbildschirm hat FrohLock in der Sperre nichts vorne zu suchen
         // (und direkt nach dem Wegwischen meldet Android kurz noch FrohLock als vorderste App).
-        val inAllowed = (fg != null && fg != packageName && fg in AllowedApps.packages(this)) ||
+        val inAllowed = (real != null && real != packageName && real in AllowedApps.packages(this)) ||
             now < AllowedApps.launchGraceUntilUptime
-        if (BuildConfig.ALLOW_DEBUGGING) android.util.Log.i("FrohLock", "weak fg=$fg allowed=$inAllowed resumed=${LockActivity.isResumed}")
+        if (BuildConfig.ALLOW_DEBUGGING) android.util.Log.i("FrohLock", "weak fg=$fg real=$real allowed=$inAllowed resumed=${LockActivity.isResumed}")
         // Ohne Nutzungsdaten weiß FrohLock nicht, was vorne ist: dann nur echte Telefonate und die
         // ersten 60 s nach „Anrufen" frei lassen – Messenger brauchen die Nutzungsdaten-Erlaubnis.
         val free = inAllowed || (fg == null && (CallState.busy(this) || now < LockActivity.callGraceUntilUptime))

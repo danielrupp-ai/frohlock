@@ -456,3 +456,41 @@ def test_android_allowed_apps_default_and_admin(client):
     env = client.get(f"/devices/{ph['deviceId']}/config?have=0", headers=hdr).json()
     cfg = _json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
     assert cfg["alwaysAllowedApps"] == ["org.thoughtcrime.securesms", "com.whatsapp", "de.schule.app"]
+
+
+def test_android_locked_but_in_use_is_shown_and_remembered(client):
+    """07.11.2026: Renat war bei „gesperrt" in Telegram (immer erlaubt) – das Web zeigte nur „gesperrt".
+    Jetzt: Status „gesperrt – aber in Benutzung" + nach 2 Min eine Auffälligkeit."""
+    import json as _json
+    import app.db as dbmod
+    _admin_login(client)
+    client.post("/admin/android/new", data={"device_name": "Handy"})
+    code = dbmod.query_one("SELECT code FROM pairing_codes")["code"]
+    ph = client.post("/devices/register", json={"pairingCode": code, "platform": "android"}).json()
+    hdr = {"Authorization": f"Bearer {ph['token']}"}
+    client.post(f"/devices/{ph['deviceId']}/config-draft", headers=hdr, json={"pinHash": "aA==", "pinSalt": "aA=="})
+    hb = {"platform": "android", "deviceOwner": False, "currentlyLocked": True, "screenActive": True,
+          "lockVisible": False, "lockReason": "Tageslimit erreicht (74/60 min)",
+          "deviceInfo": {"allowedApps": ["Telegram"]}}
+    assert client.post(f"/devices/{ph['deviceId']}/heartbeat", headers=hdr, json=hb).status_code == 200
+    page = client.get(f"/admin/devices/{ph['deviceId']}").text
+    assert "gesperrt – aber in Benutzung" in page and "Telegram ist unter „Immer erlaubt“" in page
+    assert "gesperrt – aber in Benutzung" in client.get("/admin").text
+    # Noch keine Auffälligkeit (erst nach 2 Min) …
+    assert not dbmod.query_one("SELECT gap_alerts FROM devices WHERE id=?", (ph["deviceId"],))["gap_alerts"]
+    with dbmod.tx() as c:
+        c.execute("UPDATE devices SET lock_hidden_since=lock_hidden_since-200 WHERE id=?", (ph["deviceId"],))
+    client.post(f"/devices/{ph['deviceId']}/heartbeat", headers=hdr, json=hb)
+    alerts = _json.loads(dbmod.query_one("SELECT gap_alerts FROM devices WHERE id=?", (ph["deviceId"],))["gap_alerts"])
+    assert len(alerts) == 1 and "in Benutzung" in alerts[0] and "Telegram" in alerts[0]
+    # … und nicht bei jedem Heartbeat eine neue Zeile.
+    client.post(f"/devices/{ph['deviceId']}/heartbeat", headers=hdr, json=hb)
+    assert len(_json.loads(dbmod.query_one("SELECT gap_alerts FROM devices WHERE id=?", (ph["deviceId"],))["gap_alerts"])) == 1
+    assert "Auffälligkeiten" in client.get(f"/admin/devices/{ph['deviceId']}").text
+    # Sperrbildschirm wieder sichtbar → normales „gesperrt".
+    hb["lockVisible"] = True
+    client.post(f"/devices/{ph['deviceId']}/heartbeat", headers=hdr, json=hb)
+    page = client.get(f"/admin/devices/{ph['deviceId']}").text
+    assert 'class="badge inuse"' not in page and 'class="badge locked">gesperrt<' in page
+    # Ohne erlaubte Apps steht es auch dabei.
+    assert "keine App erlaubt" in page or "erlaubt sind" in page

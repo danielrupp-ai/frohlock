@@ -84,18 +84,21 @@ def set_config_draft(device_id: str, draft: ConfigDraft, request: Request):
 @router.post("/devices/{device_id}/heartbeat")
 def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
     _require_self(request, device_id)
+    now = int(time.time())
     with db.tx() as c:
         c.execute(
             """UPDATE devices SET last_seen=?, app_version=?, reported_config_version=?,
                    locked=?, lock_reason=?, trusted_time_age=?, pin_failures=?,
                    usage_today=?, budget_minutes=?, agent_age=?, recent_audit=?,
-                   usage_segments=?, usage_day=?, screen_active=?, penalty_seconds=?, penalty_count=?
+                   usage_segments=?, usage_day=?, screen_active=?, penalty_seconds=?, penalty_count=?,
+                   lock_visible=?
                WHERE id=?""",
-            (int(time.time()), hb.appVersion, hb.configVersion, 1 if hb.currentlyLocked else 0,
+            (now, hb.appVersion, hb.configVersion, 1 if hb.currentlyLocked else 0,
              hb.lockReason, hb.trustedTimeAgeSeconds, hb.pinFailuresToday,
              hb.usageMinutesToday, hb.dailyBudgetMinutes, hb.agentAliveAgeSeconds, hb.recentAudit,
              json.dumps(hb.usageSegments[:100]), hb.usageDay, 1 if hb.screenActive else 0,
-             hb.penaltySecondsRemaining, hb.penaltyCount, device_id),
+             hb.penaltySecondsRemaining, hb.penaltyCount,
+             -1 if hb.lockVisible is None else (1 if hb.lockVisible else 0), device_id),
         )
         if hb.platform:
             c.execute(
@@ -106,6 +109,7 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
                  json.dumps(hb.deviceInfo or {}), hb.relaxedUntilUnix, device_id),
             )
         _remember_gap_alerts(c, device_id, hb.recentAudit)
+        _note_lock_hidden(c, device_id, hb, now)
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
         # Abschnitte „von wann bis wann" je Tag mitschreiben (für die Zeitleiste im Admin, auch rückwirkend).
@@ -135,6 +139,37 @@ def _remember_gap_alerts(c, device_id: str, recent_audit: str) -> None:
     merged = known + [ln for ln in lines if ln not in known]
     if len(merged) != len(known):
         c.execute("UPDATE devices SET gap_alerts=? WHERE id=?", (json.dumps(merged[-30:]), device_id))
+
+
+LOCK_HIDDEN_AFTER = 120      # s: so lange darf der Sperrbildschirm fehlen, bevor es eine Auffälligkeit wird
+LOCK_HIDDEN_REPEAT = 1800    # s: danach höchstens alle 30 Min eine neue Zeile
+
+
+def _note_lock_hidden(c, device_id: str, hb: HeartbeatIn, now: int) -> None:
+    """Gesperrt + Bildschirm an + Sperrbildschirm nicht sichtbar = das Kind nutzt das Handy trotz Sperre
+    (erlaubte App wie Telegram offen, oder das Overlay fehlt). Nach 2 Min als Auffälligkeit merken –
+    das Eltern-Web darf nicht nur „gesperrt" sagen, während das Handy in Benutzung ist (Lehre 07.11.2026)."""
+    hidden = (hb.platform == "android" and hb.currentlyLocked and hb.screenActive and hb.lockVisible is False)
+    row = c.execute("SELECT lock_hidden_since, lock_hidden_alert_at FROM devices WHERE id=?", (device_id,)).fetchone()
+    if row is None:
+        return
+    since = row["lock_hidden_since"] or 0
+    if not hidden:
+        if since:
+            c.execute("UPDATE devices SET lock_hidden_since=0 WHERE id=?", (device_id,))
+        return
+    if not since:
+        c.execute("UPDATE devices SET lock_hidden_since=? WHERE id=?", (now, device_id))
+        return
+    if now - since < LOCK_HIDDEN_AFTER or now - (row["lock_hidden_alert_at"] or 0) < LOCK_HIDDEN_REPEAT:
+        return
+    apps = (hb.deviceInfo or {}).get("allowedApps") or []
+    what = (f"erlaubte App offen: {', '.join(str(a) for a in apps)} – zählt nicht aufs Limit" if apps
+            else "keine App ist erlaubt – der Sperrbildschirm fehlt")
+    ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + ".000000Z"
+    line = f"{ts}\tUMGEHUNG\t⚠ Gesperrt, aber das Handy ist seit {(now - since) // 60} Min in Benutzung ({what})"
+    c.execute("UPDATE devices SET lock_hidden_alert_at=? WHERE id=?", (now, device_id))
+    _remember_gap_alerts(c, device_id, line)
 
 
 def _version_tuple(v: str) -> tuple:

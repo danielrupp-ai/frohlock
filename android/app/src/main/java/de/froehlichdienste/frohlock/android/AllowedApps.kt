@@ -23,10 +23,17 @@ object AllowedApps {
         "ch.threema.app" to "Threema", "org.thunderdog.challegram" to "Telegram X",
     )
 
-    /** Systemteile, die Messenger brauchen (Kamera-/Mikrofon-Erlaubnis, Anruf-Oberfläche). */
-    private val SYSTEM = setOf(
+    /**
+     * Systemteile/Dialoge, die Messenger brauchen (Kamera-/Mikrofon-Erlaubnis, Anruf-Oberfläche, Fotoauswahl,
+     * Teilen-Dialog). Sie sind nie für sich „erlaubt": Ob FrohLock eingreift, entscheidet die echte App darunter
+     * (core/ForegroundRule) – sonst wäre „Video starten, Dialog aufklappen, weiterschauen" ein Schlupfloch.
+     */
+    val SYSTEM = setOf(
         "com.google.android.permissioncontroller", "com.android.permissioncontroller",
         "com.android.systemui", "android",
+        "com.google.android.photopicker", "com.android.providers.media.module", "com.google.android.providers.media.module",
+        "com.android.documentsui", "com.google.android.documentsui",
+        "com.android.intentresolver",
     )
 
     fun configured(): List<String> = Guard.enforcer.currentConfig?.alwaysAllowedApps ?: LockConfig.DEFAULT_ALLOWED_APPS
@@ -71,6 +78,8 @@ object AllowedApps {
  */
 object ForegroundApp {
     @Volatile private var lastPkg: String? = null
+    /** Letzte vorderste App, die kein System-Dialog war – ein Dialog erbt deren Einordnung (ForegroundRule). */
+    @Volatile var lastReal: String? = null; private set
     @Volatile private var lastQueryMs = 0L
 
     fun hasAccess(ctx: Context): Boolean = try {
@@ -95,8 +104,10 @@ object ForegroundApp {
             while (events.hasNextEvent()) {
                 events.getNextEvent(e)
                 @Suppress("DEPRECATION")
-                if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED || e.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND)
+                if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED || e.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     lastPkg = e.packageName
+                    if (e.packageName !in AllowedApps.SYSTEM) lastReal = e.packageName
+                }
             }
         } catch (_: Exception) { }
         return lastPkg

@@ -97,6 +97,9 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN relaxed_until INTEGER DEFAULT 0",
     "ALTER TABLE pairing_codes ADD COLUMN platform TEXT DEFAULT 'windows'",
     "ALTER TABLE pairing_codes ADD COLUMN template_device_id TEXT",
+    "ALTER TABLE devices ADD COLUMN lock_visible INTEGER DEFAULT -1",
+    "ALTER TABLE devices ADD COLUMN lock_hidden_since INTEGER DEFAULT 0",
+    "ALTER TABLE devices ADD COLUMN lock_hidden_alert_at INTEGER DEFAULT 0",
 ]
 
 

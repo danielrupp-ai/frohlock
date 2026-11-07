@@ -6,9 +6,10 @@
   <div class="row" style="justify-content:space-between">
     <h1 style="margin:0">{% if is_android %}📱{% else %}💻{% endif %} {{ dev["name"] }}</h1>
     <div>
-      {% if dev["locked"] %}<span class="badge locked">gesperrt</span>{% else %}<span class="badge open">frei</span>{% endif %}
+      <span class="badge {{ lock_state.kind }}">{{ lock_state.label }}</span>
     </div>
   </div>
+  {% if lock_state.hint %}<p style="color:#ffab40;margin:6px 0 0">⚠ {{ lock_state.hint }}</p>{% endif %}
   <p class="muted">
     Config-Version {{ version }} · gemeldet {{ dev["reported_config_version"] }} ·
     App {{ dev["app_version"] or "–" }} ·
@@ -82,6 +83,12 @@
   <h2>💬 Immer erlaubt – auch während jeder Sperre</h2>
   <p class="muted" style="margin:0 0 10px">Diese Apps kann das Kind jederzeit öffnen, auch in der Schlafenszeit, beim Tageslimit und in der Auszeit
     (auf dem Sperrbildschirm gibt es dafür Knöpfe). Telefon und Wecker sind immer erlaubt. Alles andere bleibt gesperrt.</p>
+  <p style="margin:0 0 10px;color:#ffab40">Wichtig: Steht hier eine App, zeigt das Eltern-Web zwar „gesperrt“, aber das Kind kann diese App
+    in jeder Sperre <b>ohne Zeitlimit</b> nutzen – bei Telegram auch den eingebauten Browser, Videos und Spiele darin. Diese Zeit zählt nicht
+    aufs Tageslimit. Wer eine echte Vollsperre will, lässt alle Häkchen weg. Oben steht dann „gesperrt – aber in Benutzung“, sobald das Kind
+    eine erlaubte App offen hat.</p>
+  <p class="muted" style="margin:0 0 10px"><b>Zurzeit:</b> {% if allowed_now %}erlaubt sind {{ allowed_now|join(", ") }}.{% else %}keine App erlaubt –
+    die Sperre ist vollständig (nur Telefon und Wecker).{% endif %}</p>
   <form method="post" action="/admin/devices/{{ dev['id'] }}/allowed-apps">
     <div class="row">
       {% for m in messengers %}

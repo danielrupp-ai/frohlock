@@ -51,6 +51,32 @@ def _berlin_now():
         return datetime.datetime.now()
 
 
+def _lock_state(dev, now: int) -> dict:
+    """Ehrlicher Status fürs Eltern-Web. „gesperrt" heißt nur: FrohLock sperrt. Ist das Kind gerade in einer
+    erlaubten App (Telegram/Signal) oder fehlt der Sperrbildschirm, ist das Handy trotzdem in Benutzung –
+    das steht dann dabei (07.11.2026: Renat nutzte Telegram, das Web zeigte nur „gesperrt")."""
+    keys = dev.keys()
+    if not dev["last_seen"] or now - dev["last_seen"] > 300:
+        return {"kind": "off", "label": "offline", "hint": ""}
+    if not dev["locked"]:
+        return {"kind": "open", "label": "frei", "hint": ""}
+    is_android = "platform" in keys and (dev["platform"] or "") == "android"
+    lock_visible = dev["lock_visible"] if "lock_visible" in keys and dev["lock_visible"] is not None else -1
+    screen_on = ("screen_active" not in keys) or dev["screen_active"] == 1
+    if is_android and screen_on and lock_visible == 0:
+        info = android.device_info(dev["device_info"] if "device_info" in keys else None)
+        apps = [str(a) for a in (info.get("allowedApps") or [])]
+        if apps:
+            hint = ("Das Handy ist gerade in Benutzung: " + ", ".join(apps) +
+                    (" ist" if len(apps) == 1 else " sind") + " unter „Immer erlaubt“ freigegeben – diese Zeit zählt nicht aufs Limit. "
+                    "Vollsperre: unten bei „Immer erlaubt“ alle Häkchen entfernen.")
+        else:
+            hint = ("Das Handy ist gerade in Benutzung, obwohl keine App erlaubt ist – der Sperrbildschirm fehlt. "
+                    "Siehe „Auffälligkeiten“ und „Am Handy fehlt noch“.")
+        return {"kind": "inuse", "label": "gesperrt – aber in Benutzung", "hint": hint}
+    return {"kind": "locked", "label": "gesperrt", "hint": ""}
+
+
 def _gap_alerts(dev) -> list[dict]:
     """Gemerkte ⚠-Lücken (neueste zuerst) mit Berliner Uhrzeit, für die Geräteseite."""
     import datetime
@@ -189,12 +215,13 @@ def dashboard(request: Request):
         return RedirectResponse("/login", status_code=303)
     devices = db.query("SELECT * FROM devices ORDER BY created_at DESC")
     penalties = {d["id"]: _penalty_status(d) for d in devices}
+    lock_states = {d["id"]: _lock_state(d, int(time.time())) for d in devices}
     codes = db.query("SELECT * FROM pairing_codes WHERE used_device_id IS NULL AND expires_at > ? ORDER BY created_at DESC",
                      (int(time.time()),))
     now = int(time.time())
     return templates.TemplateResponse("dashboard.html", {
         "request": request, "devices": devices, "codes": codes, "now": now,
-        "penalties": penalties, "timeout_minutes": TIMEOUT_MINUTES,
+        "penalties": penalties, "timeout_minutes": TIMEOUT_MINUTES, "lock_states": lock_states,
         "flash": request.query_params.get("ok", ""),
     })
 
@@ -283,8 +310,12 @@ def device_detail(request: Request, device_id: str):
 
     allowed = draft.get("alwaysAllowedApps", configbuilder.DEFAULT_ALLOWED_APPS)
     known_pkgs = {p for _, pkgs in configbuilder.KNOWN_MESSENGERS for p in pkgs}
+    allowed_now = [n for n, pkgs in configbuilder.KNOWN_MESSENGERS if any(p in allowed for p in pkgs)] + \
+        [p for p in allowed if p not in known_pkgs]
     return templates.TemplateResponse("device.html", {
         "is_android": is_android,
+        "lock_state": _lock_state(dev, int(time.time())),
+        "allowed_now": allowed_now,
         "messengers": [{"name": n, "key": pkgs[0], "on": any(p in allowed for p in pkgs)} for n, pkgs in configbuilder.KNOWN_MESSENGERS],
         "allowed_extra": ", ".join(p for p in allowed if p not in known_pkgs),
         "android_info": android.device_info(dev["device_info"] if "device_info" in keys else None),

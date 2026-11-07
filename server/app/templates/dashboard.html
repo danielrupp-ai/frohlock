@@ -12,13 +12,9 @@
       <td>{% if d["platform"] == "android" %}📱{% else %}💻{% endif %} {{ d["name"] }}
         {% if d["platform"] == "android" and d["device_owner"] == 0 %}<br><span class="muted" style="color:#ffab40">⚠ ohne Geräte-Verwaltung</span>{% endif %}</td>
       <td>
-        {% if not d["last_seen"] or now - d["last_seen"] > 300 %}
-          <span class="badge off">offline</span>
-        {% elif d["locked"] %}
-          <span class="badge locked">gesperrt</span>
-        {% else %}
-          <span class="badge open">frei</span>
-        {% endif %}
+        {% set s = lock_states[d["id"]] %}
+        <span class="badge {{ s.kind }}">{{ s.label }}</span>
+        {% if s.hint %}<br><span class="muted" style="font-size:12px;color:#ffab40">{{ s.hint }}</span>{% endif %}
       </td>
       <td class="muted">
         {{ d["usage_today"] or 0 }} min{% if d["budget_minutes"] and d["budget_minutes"] > 0 %} / {{ d["budget_minutes"] }}{% endif %}

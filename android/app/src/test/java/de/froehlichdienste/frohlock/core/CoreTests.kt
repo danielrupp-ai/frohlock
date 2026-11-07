@@ -242,3 +242,25 @@ class CoreTests {
         assertEquals(1234L, old.onSecondsToday); assertEquals(-1L, old.ledgerBaseAndroidSeconds)
     }
 }
+
+class ForegroundRuleTests {
+    private val system = setOf("com.android.permissioncontroller", "com.google.android.photopicker", "android")
+
+    @Test fun `System-Dialog erbt die echte App darunter`() {
+        // Spiel + Berechtigungsdialog → weiterhin das Spiel (nicht erlaubt → Overlay bleibt).
+        assertEquals("com.game", ForegroundRule.effective("com.android.permissioncontroller", "com.game", system))
+        // Telegram + Fotoauswahl → weiterhin Telegram (erlaubt, wenn Telegram erlaubt ist).
+        assertEquals("org.telegram.messenger", ForegroundRule.effective("com.google.android.photopicker", "org.telegram.messenger", system))
+    }
+
+    @Test fun `echte App bleibt sie selbst`() {
+        assertEquals("com.game", ForegroundRule.effective("com.game", "org.telegram.messenger", system))
+        assertEquals("org.telegram.messenger", ForegroundRule.effective("org.telegram.messenger", "com.game", system))
+    }
+
+    @Test fun `unbekannt bleibt unbekannt`() {
+        assertNull(ForegroundRule.effective(null, "com.game", system))
+        // Dialog ohne bekannte App darunter → unbekannt → nicht erlaubt.
+        assertNull(ForegroundRule.effective("android", null, system))
+    }
+}

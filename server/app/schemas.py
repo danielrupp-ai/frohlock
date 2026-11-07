@@ -63,3 +63,5 @@ class HeartbeatIn(BaseModel):
     lockTaskActive: bool | None = None
     deviceInfo: dict = Field(default_factory=dict)
     relaxedUntilUnix: int = 0
+    # Sperrbildschirm/Overlay gerade sichtbar? (False = Kind ist in erlaubter App oder Overlay fehlt)
+    lockVisible: bool | None = None
