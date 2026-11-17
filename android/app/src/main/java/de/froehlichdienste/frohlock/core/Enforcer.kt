@@ -71,6 +71,12 @@ class Enforcer(
 
     private fun masterActive() = state.masterUnlockUntilUnix > 0 && nowUnix() < state.masterUnlockUntilUnix
 
+    /**
+     * Vom Schutzdienst gesetzt (einfacher Modus): Text, wenn ein Teil des Löschschutzes fehlt (Geräteadministrator aus).
+     * Dann ist gesperrt, bis der Schutz wieder an ist oder die Eltern per PIN freigeben. null = alles da.
+     */
+    @Volatile var guardIncomplete: String? = null
+
     fun decide(): Decision = synchronized(lock) {
         val d = decideBase()
         val c = config
@@ -83,10 +89,13 @@ class Enforcer(
         val e = engine
         // Vor der Einrichtung NIE sperren – sonst wäre man ohne PIN ausgesperrt.
         if (c == null || e == null || !c.hasPin) return Decision.unlocked("Noch nicht eingerichtet")
-        if (state.forcedLock) return Decision.locked("Mama oder Papa haben $deviceWord gerade gesperrt. 💛")
+        if (state.forcedLock) return Decision.locked(state.forcedLockMessage.ifBlank { "Mama oder Papa haben $deviceWord gerade gesperrt. 💛" })
 
         val now = localNow()
         val unlockUntil = if (state.unlockUntilUnix > 0) toLocal(state.unlockUntilUnix) else null
+        // Schutz unvollständig (Geräteadministrator abgeschaltet): gesperrt, außer Eltern haben per PIN freigegeben.
+        val incomplete = guardIncomplete
+        if (incomplete != null && !(unlockUntil != null && now.isBefore(unlockUntil))) return Decision.locked(incomplete)
         val base = e.decide(now, 0, unlockUntil)
         val graceActive = unlockUntil != null && now.isBefore(unlockUntil)
         return BudgetPolicy.apply(base, c.effectiveDailyBudget(now.dow()), state.usageMinutes(now.toLocalDate()),
@@ -127,6 +136,7 @@ class Enforcer(
             state.masterUnlockUntilUnix = nowUnix() + 8 * 3600
             state.unlockUntilUnix = state.masterUnlockUntilUnix
             state.forcedLock = false
+            state.forcedLockMessage = ""
             state.pinFailuresToday = 0
             state.clearPenalty()
             save()
@@ -138,6 +148,7 @@ class Enforcer(
         state.unlockUntilUnix = nowUnix() + mins * 60L
         if (state.forcedLock) audit.write("LOCK", "Sofortsperre durch Eltern-PIN aufgehoben")
         state.forcedLock = false
+        state.forcedLockMessage = ""
         if (state.penaltySecondsRemaining > 0) audit.write("AUSZEIT", "Durch Eltern-PIN aufgehoben")
         state.clearPenalty()
         save()
@@ -161,10 +172,11 @@ class Enforcer(
         fresh
     }
 
-    fun forceLock(reason: String) = synchronized(lock) {
+    fun forceLock(reason: String, message: String = "") = synchronized(lock) {
         state.unlockUntilUnix = 0
         state.masterUnlockUntilUnix = 0
         state.forcedLock = true
+        state.forcedLockMessage = message
         save()
         audit.write("LOCK", "Sofortsperre: $reason – gesperrt bis zur Freigabe durch Eltern")
     }
@@ -172,6 +184,7 @@ class Enforcer(
     fun remoteUnlock(minutes: Int, reason: String) = synchronized(lock) {
         state.unlockUntilUnix = nowUnix() + minutes.coerceAtLeast(1) * 60L
         state.forcedLock = false
+        state.forcedLockMessage = ""
         state.clearPenalty()
         save()
         audit.write("UNLOCK", "Entsperrt für $minutes min: $reason")

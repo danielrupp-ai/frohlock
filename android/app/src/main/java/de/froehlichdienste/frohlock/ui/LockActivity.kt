@@ -20,6 +20,8 @@ import android.window.OnBackInvokedDispatcher
 import de.froehlichdienste.frohlock.android.DeviceOwner
 import de.froehlichdienste.frohlock.android.Guard
 import de.froehlichdienste.frohlock.android.GuardService
+import de.froehlichdienste.frohlock.android.Tamper
+import de.froehlichdienste.frohlock.android.WeakGuard
 import de.froehlichdienste.frohlock.core.PenaltyPolicy
 import de.froehlichdienste.frohlock.core.UsageTimeline
 import java.lang.ref.WeakReference
@@ -41,6 +43,7 @@ class LockActivity : Activity() {
     private lateinit var sweet: TextView
     private lateinit var pinPanel: LinearLayout
     private lateinit var pinMsg: TextView
+    private lateinit var rearm: View
     private var sweetIdx = -1
     private var leaving = false
 
@@ -91,6 +94,9 @@ class LockActivity : Activity() {
         pinPanel.addView(row)
         col.addView(pinPanel)
 
+        rearm = Ui.button(this, "🛡️  Schutz wieder einschalten") { de.froehlichdienste.frohlock.android.Tamper.requestAdmin(this) }
+            .apply { visibility = View.GONE }
+        col.addView(rearm)
         col.addView(Ui.button(this, "🔑  Eltern-PIN", primary = false) {
             pinPanel.visibility = if (pinPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         })
@@ -210,6 +216,7 @@ class LockActivity : Activity() {
         val used = e.todayUsageMinutes()
         val segs = e.todaySegments()
         big.visibility = View.GONE; timeline.visibility = View.GONE; calc.visibility = View.GONE
+        rearm.visibility = if (!DeviceOwner.isDeviceOwner(this) && !WeakGuard.isAdminActive(this)) View.VISIBLE else View.GONE
         when {
             PenaltyPolicy.isPenaltyReason(d.reason) -> {
                 emoji.text = "⏳"
@@ -218,6 +225,11 @@ class LockActivity : Activity() {
                 body.text = "Mama oder Papa waren gerade beschäftigt, und es war zum Glück kein Notfall … " +
                     "Darum macht ${word} jetzt ${if (total > 0) "$total" else "15"} Minuten Pause. 💛"
                 big.text = PenaltyPolicy.formatCountdown(e.penaltySeconds()); big.visibility = View.VISIBLE
+            }
+            d.reason == Tamper.MESSAGE || d.reason == Tamper.INCOMPLETE -> {
+                emoji.text = "🛡️"
+                title.text = "FrohLock bleibt an"
+                body.text = d.reason
             }
             d.reason.startsWith("Sperrfenster") -> {
                 emoji.text = "🌙"

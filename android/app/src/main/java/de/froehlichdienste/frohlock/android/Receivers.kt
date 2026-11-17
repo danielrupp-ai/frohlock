@@ -28,18 +28,24 @@ class AdminReceiver : DeviceAdminReceiver() {
         }
     }
 
-    /** Einfacher Modus: Kind will den Geräteadministrator abschalten (Voraussetzung fürs Löschen). */
+    /** Einfacher Modus: Kind will den Geräteadministrator abschalten (Voraussetzung fürs Löschen) → sofort sperren (1.0.7). */
     override fun onDisableRequested(ctx: Context, intent: Intent): CharSequence {
         Guard.init(ctx)
-        Guard.audit.write("UMGEHUNG", "⚠ Jemand will den FrohLock-Geräteadministrator abschalten")
-        GuardService.syncNow(ctx)
-        return "FrohLock schützt dieses Gerät für deine Eltern. Bitte frag Mama oder Papa, bevor du das abschaltest – sie sehen es sonst im Admin."
+        if (Tamper.active(ctx)) {
+            Tamper.lock(ctx, "Geräteadministrator sollte abgeschaltet werden")
+        } else {
+            Guard.audit.write("UMGEHUNG", "⚠ Jemand will den FrohLock-Geräteadministrator abschalten (Eltern-Freigabe aktiv)")
+            GuardService.syncNow(ctx)
+        }
+        return "FrohLock schützt dieses Gerät für deine Eltern. Wenn du das abschaltest, bleibt das Handy gesperrt, " +
+            "bis Mama oder Papa die PIN eingeben – und sie bekommen sofort eine Nachricht."
     }
 
     override fun onDisabled(ctx: Context, intent: Intent) {
         Guard.init(ctx)
         if (GuardService.releasing || Guard.pairing() == null) return   // Eltern haben FrohLock selbst entfernt
         Guard.audit.write("UMGEHUNG", "⚠ FrohLock-Geräteadministrator wurde abgeschaltet – die App kann jetzt gelöscht werden")
+        Tamper.lock(ctx, "Geräteadministrator wurde abgeschaltet")
         GuardService.syncNow(ctx)
     }
 

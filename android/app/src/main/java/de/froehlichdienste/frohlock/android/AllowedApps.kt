@@ -80,6 +80,8 @@ object ForegroundApp {
     @Volatile private var lastPkg: String? = null
     /** Letzte vorderste App, die kein System-Dialog war – ein Dialog erbt deren Einordnung (ForegroundRule). */
     @Volatile var lastReal: String? = null; private set
+    /** Activity-Klasse der vordersten Seite (für den Löschschutz: welche Einstellungs-Seite ist offen?). */
+    @Volatile var lastClass: String? = null; private set
     @Volatile private var lastQueryMs = 0L
 
     fun hasAccess(ctx: Context): Boolean = try {
@@ -106,6 +108,7 @@ object ForegroundApp {
                 @Suppress("DEPRECATION")
                 if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED || e.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     lastPkg = e.packageName
+                    lastClass = e.className
                     if (e.packageName !in AllowedApps.SYSTEM) lastReal = e.packageName
                 }
             }

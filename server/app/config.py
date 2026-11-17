@@ -43,6 +43,10 @@ class Settings:
         self.smtp_from: str = os.getenv("FROHLOCK_SMTP_FROM", "FrohLock <noreply@froehlichdienste.de>")
         self.smtp_starttls: bool = os.getenv("FROHLOCK_SMTP_STARTTLS", "1") not in ("0", "false", "")
 
+        # Warn-E-Mails (Löschversuch, Gerät meldet sich nicht) – kommagetrennt; dazu die Reset-E-Mail des Geräts.
+        self.alert_email: str = os.getenv("FROHLOCK_ALERT_EMAIL", "")
+        self.watchdog_enabled: bool = os.getenv("FROHLOCK_WATCHDOG", "1") not in ("0", "false", "")
+
         # Aktuelles Client-Update.
         self.update_version: str = os.getenv("FROHLOCK_UPDATE_VERSION", "")
         self.update_url: str = os.getenv("FROHLOCK_UPDATE_URL", "")

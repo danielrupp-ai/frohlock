@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from . import android, configbuilder, db
+from . import alerts, android, configbuilder, db
 from .config import settings
 from .schemas import ConfigDraft, HeartbeatIn, RegisterRequest, RegisterResponse
 from .security import authed_device, hash_token, new_token
@@ -108,7 +108,9 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
                  None if hb.lockTaskActive is None else int(hb.lockTaskActive),
                  json.dumps(hb.deviceInfo or {}), hb.relaxedUntilUnix, device_id),
             )
-        _remember_gap_alerts(c, device_id, hb.recentAudit)
+        alerts.on_heartbeat_seen(c, device_id, now)
+        new_lines = _remember_gap_alerts(c, device_id, hb.recentAudit)
+        alerts.on_new_lines(c, device_id, new_lines, now)
         _note_lock_hidden(c, device_id, hb, now)
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
@@ -124,21 +126,22 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
     return {"ok": True}
 
 
-def _remember_gap_alerts(c, device_id: str, recent_audit: str) -> None:
+def _remember_gap_alerts(c, device_id: str, recent_audit: str) -> list[str]:
     """⚠-Lücken („FrohLock stand still, obwohl der Laptop wach war") dauerhaft merken –
     das Geräte-Protokoll zeigt nur die letzten Zeilen, die Warnung darf nicht wegrollen."""
     lines = [ln.strip() for ln in (recent_audit or "").splitlines()
              if ("\tLUECKE\t" in ln or "\tOVERLAY\t" in ln or "\tUMGEHUNG\t" in ln) and "⚠" in ln]
     if not lines:
-        return
+        return []
     row = c.execute("SELECT gap_alerts FROM devices WHERE id=?", (device_id,)).fetchone()
     try:
         known = json.loads(row["gap_alerts"]) if row and row["gap_alerts"] else []
     except ValueError:
         known = []
-    merged = known + [ln for ln in lines if ln not in known]
-    if len(merged) != len(known):
-        c.execute("UPDATE devices SET gap_alerts=? WHERE id=?", (json.dumps(merged[-30:]), device_id))
+    fresh = [ln for ln in lines if ln not in known]
+    if fresh:
+        c.execute("UPDATE devices SET gap_alerts=? WHERE id=?", (json.dumps((known + fresh)[-30:]), device_id))
+    return fresh
 
 
 LOCK_HIDDEN_AFTER = 120      # s: so lange darf der Sperrbildschirm fehlen, bevor es eine Auffälligkeit wird

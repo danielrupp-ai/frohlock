@@ -71,6 +71,7 @@ class MainActivity : Activity() {
                 if (pending != null) { try { startActivity(pending); return@button } catch (_: Exception) { } }
                 if (!packageManager.canRequestPackageInstalls()) {
                     updateMsg.text = "Zuerst FrohLock als Quelle zulassen – Schalter einschalten, dann zurück und nochmal tippen."
+                    de.froehlichdienste.frohlock.android.Tamper.allowOwnSettings()
                     try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         android.net.Uri.parse("package:$packageName"))) } catch (_: Exception) { }
                     return@button

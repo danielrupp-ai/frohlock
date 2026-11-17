@@ -5,6 +5,7 @@ import tempfile
 
 os.environ["FROHLOCK_DB"] = os.path.join(tempfile.gettempdir(), f"frohlock_test_{os.getpid()}.db")
 os.environ["FROHLOCK_ADMIN_PASSWORD"] = "test-pass"
+os.environ["FROHLOCK_WATCHDOG"] = "0"
 
 import pytest
 from cryptography.hazmat.primitives import hashes
@@ -494,3 +495,74 @@ def test_android_locked_but_in_use_is_shown_and_remembered(client):
     assert 'class="badge inuse"' not in page and 'class="badge locked">gesperrt<' in page
     # Ohne erlaubte Apps steht es auch dabei.
     assert "keine App erlaubt" in page or "erlaubt sind" in page
+
+
+def _android_device(client, name):
+    _admin_login(client)
+    client.post("/admin/pairing", data={"device_name": name}, follow_redirects=False)
+    import app.db as dbmod
+    code = dbmod.query("SELECT code FROM pairing_codes WHERE device_name=?", (name,))[0]["code"]
+    dev = client.post("/devices/register", json={"pairingCode": code, "deviceName": name}).json()
+    return dev["deviceId"], {"Authorization": f"Bearer {dev['token']}"}
+
+
+def test_tamper_line_sends_one_email(client, monkeypatch):
+    """Löschversuch im Heartbeat → sofort eine Warn-E-Mail (nicht bei jedem Heartbeat erneut)."""
+    import time as _time
+    from app import alerts, emailer
+    from app.config import settings
+    sent = []
+    monkeypatch.setattr(emailer, "send", lambda to, subj, body: sent.append((to, subj, body)) or True)
+    monkeypatch.setattr(alerts.threading, "Thread", lambda target, daemon: type("T", (), {"start": lambda self: target()})())
+    monkeypatch.setattr(settings, "alert_email", "eltern@example.org")
+    device_id, auth = _android_device(client, "Kind Handy")
+    ts = _time.strftime("%Y-%m-%dT%H:%M:%S", _time.gmtime()) + ".1Z"
+    line = f"{ts}\tUMGEHUNG\t⚠ LÖSCHVERSUCH: Geräteadministrator sollte abgeschaltet werden – Handy gesperrt bis Eltern-PIN"
+    hb = {"deviceId": device_id, "appVersion": "1.0.7", "platform": "android", "recentAudit": line,
+          "deviceInfo": {"deviceAdmin": True}}
+    assert client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth).status_code == 200
+    assert client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth).status_code == 200
+    assert len(sent) == 1
+    assert sent[0][0] == "eltern@example.org" and "Löschversuch" in sent[0][1] and "Kind Handy" in sent[0][1]
+    # harmlose ⚠-Zeile → keine Mail
+    hb2 = dict(hb, recentAudit=f"{ts}\tUMGEHUNG\t⚠ Während der Sperre war „Google“ vorne")
+    client.post(f"/devices/{device_id}/heartbeat", json=hb2, headers=auth)
+    assert len(sent) == 1
+
+
+def test_silent_device_after_admin_off_warns_once_then_all_clear(client, monkeypatch):
+    import time as _time
+    from app import alerts, emailer
+    from app.config import settings
+    import app.db as dbmod
+    sent = []
+    monkeypatch.setattr(emailer, "send", lambda to, subj, body: sent.append(subj) or True)
+    monkeypatch.setattr(alerts.threading, "Thread", lambda target, daemon: type("T", (), {"start": lambda self: target()})())
+    monkeypatch.setattr(settings, "alert_email", "eltern@example.org")
+    device_id, auth = _android_device(client, "Stilles Handy")
+    hb = {"deviceId": device_id, "appVersion": "1.0.7", "platform": "android", "recentAudit": "",
+          "deviceInfo": {"deviceAdmin": False}}
+    client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth)
+    now = int(_time.time())
+    assert alerts.check_silence(now + 300) == 0            # 5 Min still: noch nichts
+    assert alerts.check_silence(now + 700) == 1            # > 10 Min nach „Schutz aus“ → wahrscheinlich gelöscht
+    assert alerts.check_silence(now + 1400) == 0           # nur einmal je Funkstille
+    assert any("wahrscheinlich gelöscht" in s for s in sent)
+    gap = dbmod.query_one("SELECT gap_alerts FROM devices WHERE id=?", (device_id,))["gap_alerts"]
+    import json as _json
+    assert any("wahrscheinlich gelöscht" in g for g in _json.loads(gap))
+    client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth)   # wieder da → Entwarnung
+    assert any("meldet sich wieder" in s for s in sent)
+
+
+def test_silent_normal_device_waits_three_hours(client, monkeypatch):
+    import time as _time
+    from app import alerts, emailer
+    monkeypatch.setattr(emailer, "send", lambda *a: True)
+    monkeypatch.setattr(alerts.threading, "Thread", lambda target, daemon: type("T", (), {"start": lambda self: target()})())
+    device_id, auth = _android_device(client, "Normales Handy")
+    hb = {"deviceId": device_id, "appVersion": "1.0.7", "platform": "android", "deviceInfo": {"deviceAdmin": True}}
+    client.post(f"/devices/{device_id}/heartbeat", json=hb, headers=auth)
+    now = int(_time.time())
+    assert alerts.check_silence(now + 3600) == 0
+    assert alerts.check_silence(now + 3 * 3600 + 60) == 1

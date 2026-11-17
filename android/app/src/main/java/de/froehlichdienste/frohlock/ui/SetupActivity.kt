@@ -201,7 +201,7 @@ class SetupActivity : Activity() {
         col.addView(Ui.card(this).apply {
             addView(Ui.text(this@SetupActivity, if (owner) "✓ Geräte-Verwaltung aktiv – FrohLock kann nicht gelöscht oder beendet werden."
                 else "Einfacher Schutz (ohne Zurücksetzen): Der Sperrbildschirm liegt über allen Apps. Ein Kind, das sich auskennt, " +
-                     "kann FrohLock aber in den Einstellungen abschalten – das seht ihr dann im Admin.",
+                     "versuchen, FrohLock in den Einstellungen abzuschalten – dann sperrt FrohLock das Gerät bis zur Eltern-PIN, und ihr bekommt sofort eine E-Mail.",
                 15f, if (owner) Ui.GOOD else 0xEEFFFFFF.toInt()))
             addView(Ui.text(this@SetupActivity, Guard.enforcer.todaySummary(), 15f))
         })
@@ -209,6 +209,7 @@ class SetupActivity : Activity() {
         val pm = getSystemService(PowerManager::class.java)
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
             col.addView(Ui.button(this, "Akku-Sparen für FrohLock ausschalten (empfohlen)", primary = false) {
+                de.froehlichdienste.frohlock.android.Tamper.allowOwnSettings()
                 try { startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) } catch (_: Exception) { }
             })
         }
@@ -231,7 +232,7 @@ class SetupActivity : Activity() {
             val card = Ui.card(this)
             card.addView(Ui.text(this, (if (done) "✓ " else "○ ") + title, 17f, if (done) Ui.GOOD else Ui.ACCENT, bold = true))
             card.addView(Ui.text(this, why, 14f, 0xCCFFFFFF.toInt()))
-            if (!done) card.addView(Ui.button(this, "Erlauben") { action() })
+            if (!done) card.addView(Ui.button(this, "Erlauben") { de.froehlichdienste.frohlock.android.Tamper.allowOwnSettings(); action() })
             col.addView(card)
         }
         item(WeakGuard.canOverlay(this), "Über anderen Apps einblenden",
@@ -267,6 +268,7 @@ class SetupActivity : Activity() {
     }
 
     private fun openAppInfo() {
+        de.froehlichdienste.frohlock.android.Tamper.allowOwnSettings()
         try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (_: Exception) { }
     }
     override fun onPause() { isActive = false; super.onPause() }

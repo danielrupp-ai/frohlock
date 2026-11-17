@@ -87,6 +87,49 @@ class CoreTests {
         assertFalse(en.decide().locked)
     }
 
+    @Test fun tamperLockKeepsMessageUntilPin() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val (h, s) = PinHasher.hash("2468", 1000)
+        val st = RuntimeState()
+        val en = Enforcer(clock, MemAudit(), st, {})
+        en.setConfig(cfg().copy(pinHash = h, pinSalt = s))
+        en.forceLock("LÖSCHVERSUCH", "Bleibt gesperrt")
+        assertEquals("Bleibt gesperrt", en.decide().reason)
+        // Zustand überlebt Neustart
+        val again = RuntimeState.fromJson(st.toJson())
+        assertTrue(again.forcedLock); assertEquals("Bleibt gesperrt", again.forcedLockMessage)
+        assertTrue(en.submitPin("2468").ok)
+        assertFalse(en.decide().locked)
+        assertEquals("", st.forcedLockMessage)
+    }
+
+    @Test fun incompleteGuardLocksUnlessPinGrace() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val (h, s) = PinHasher.hash("2468", 1000)
+        val en = Enforcer(clock, MemAudit(), RuntimeState(), {})
+        en.setConfig(cfg().copy(pinHash = h, pinSalt = s))
+        en.guardIncomplete = "Schutz aus"
+        assertTrue(en.decide().locked); assertEquals("Schutz aus", en.decide().reason)
+        assertTrue(en.submitPin("2468", 30).ok)
+        assertFalse("Eltern-PIN gibt trotzdem frei", en.decide().locked)
+        clock.t = clock.t.plusMinutes(31)
+        assertTrue(en.decide().locked)
+        en.guardIncomplete = null
+        assertFalse(en.decide().locked)
+    }
+
+    @Test fun tamperRuleSettingsPages() {
+        val st = "com.android.settings"
+        val add = "com.android.settings.applications.specialaccess.deviceadmin.DeviceAdminAdd"
+        assertEquals(TamperRule.Kind.ADMIN_PAGE, TamperRule.classify(st, add, adminActive = true))
+        assertEquals(TamperRule.Kind.ADMIN_PAGE, TamperRule.classify(st, "com.android.settings.DeviceAdminAdd", adminActive = true))
+        assertEquals("Wieder-Einschalten erlaubt", TamperRule.Kind.NONE, TamperRule.classify(st, add, adminActive = false))
+        assertEquals(TamperRule.Kind.APP_INFO, TamperRule.classify(st, "com.android.settings.applications.InstalledAppDetailsTop", true))
+        assertEquals(TamperRule.Kind.NONE, TamperRule.classify(st, "com.android.settings.Settings", true))
+        assertEquals(TamperRule.Kind.NONE, TamperRule.classify("com.example.game", "x.DeviceAdminAdd", true))
+        assertEquals(TamperRule.Kind.NONE, TamperRule.classify(st, null, true))
+    }
+
     @Test fun pinLockoutAfterEightFailures() {
         val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
         val (h, s) = PinHasher.hash("2468", 1000)

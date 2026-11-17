@@ -10,6 +10,8 @@ class RuntimeState {
     var masterUnlockUntilUnix = 0L
     /** „Sofort sperren" der Eltern: gilt bis Eltern-PIN, Fern-Entsperren oder Master-PIN. */
     var forcedLock = false
+    /** Eigener Text der Sofortsperre (z. B. nach einem Löschversuch); leer = Standardtext. */
+    var forcedLockMessage = ""
     var pinFailuresToday = 0
     var pinFailureDay = ""
 
@@ -119,6 +121,7 @@ class RuntimeState {
         .put("unlockUntilUnix", unlockUntilUnix)
         .put("masterUnlockUntilUnix", masterUnlockUntilUnix)
         .put("forcedLock", forcedLock)
+        .put("forcedLockMessage", forcedLockMessage)
         .put("pinFailuresToday", pinFailuresToday)
         .put("pinFailureDay", pinFailureDay)
         .put("usageDay", usageDay)
@@ -149,6 +152,7 @@ class RuntimeState {
             unlockUntilUnix = o.optLong("unlockUntilUnix")
             masterUnlockUntilUnix = o.optLong("masterUnlockUntilUnix")
             forcedLock = o.optBoolean("forcedLock")
+            forcedLockMessage = o.optString("forcedLockMessage", "")
             pinFailuresToday = o.optInt("pinFailuresToday")
             pinFailureDay = o.optString("pinFailureDay", "")
             usageDay = o.optString("usageDay", "")

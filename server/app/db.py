@@ -100,6 +100,8 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN lock_visible INTEGER DEFAULT -1",
     "ALTER TABLE devices ADD COLUMN lock_hidden_since INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN lock_hidden_alert_at INTEGER DEFAULT 0",
+    "ALTER TABLE devices ADD COLUMN tamper_alert_at INTEGER DEFAULT 0",
+    "ALTER TABLE devices ADD COLUMN silence_alert_at INTEGER DEFAULT 0",
 ]
 
 

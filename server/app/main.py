@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import admin, api, db, public, reset
+from . import admin, alerts, api, db, public, reset
 from .config import settings
 from .security import hash_password
 
@@ -22,6 +22,8 @@ def create_app() -> FastAPI:
     app.include_router(api.router)
     app.include_router(reset.router)
     app.include_router(admin.router)
+
+    alerts.start_watchdog()
 
     @app.get("/healthz")
     def healthz():

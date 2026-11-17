@@ -21,6 +21,7 @@ import android.provider.Settings
 import de.froehlichdienste.frohlock.BuildConfig
 import de.froehlichdienste.frohlock.R
 import de.froehlichdienste.frohlock.core.ForegroundRule
+import de.froehlichdienste.frohlock.core.TamperRule
 import de.froehlichdienste.frohlock.ui.LockActivity
 import de.froehlichdienste.frohlock.ui.MainActivity
 import de.froehlichdienste.frohlock.ui.SetupActivity
@@ -114,11 +115,36 @@ class GuardService : Service() {
     private fun loop() {
         try { tick() } catch (e: Exception) { Guard.audit.write("DIENST", "Takt-Fehler: ${e.javaClass.simpleName} ${e.message}") }
         // Einfacher Modus (ohne Geräte-Verwaltung) während einer Sperre: schneller nachsehen, ob das Kind weggewechselt hat.
-        val fast = !DeviceOwner.isDeviceOwner(this) && lastLocked
+        val fast = !DeviceOwner.isDeviceOwner(this) && (lastLocked || inSettings)
         handler.postDelayed({ loop() }, if (fast) 1_500 else 5_000)
     }
 
     @Volatile private var lastLocked = false
+    /** Einstellungs-App vorne – dann schneller nachsehen (Löschschutz). */
+    @Volatile private var inSettings = false
+    private var lastAppInfoAudit = 0L
+
+    /**
+     * Löschschutz: Seite „Geräteadministrator“ → Löschversuch (sperren bis Eltern-PIN);
+     * App-Info (Stopp erzwingen / Deinstallieren) → zurück zum Startbildschirm. Siehe core/TamperRule.
+     */
+    private fun checkTamper() {
+        val fg = ForegroundApp.current(this)
+        inSettings = TamperRule.isSettings(fg)
+        if (!inSettings) return
+        when (TamperRule.classify(fg, ForegroundApp.lastClass, WeakGuard.isAdminActive(this))) {
+            TamperRule.Kind.ADMIN_PAGE -> { Tamper.goHome(this); Tamper.lock(this, "Seite „Geräteadministrator“ in den Einstellungen geöffnet") }
+            TamperRule.Kind.APP_INFO -> if (!Tamper.ownSettingsActive()) {
+                Tamper.goHome(this)
+                val now = SystemClock.uptimeMillis()
+                if (now - lastAppInfoAudit > 120_000) {
+                    lastAppInfoAudit = now
+                    Guard.audit.write("UMGEHUNG", "⚠ App-Info in den Einstellungen geöffnet (dort ginge „Stopp erzwingen“/„Deinstallieren“) – zurück zum Startbildschirm")
+                }
+            }
+            TamperRule.Kind.NONE -> { }
+        }
+    }
 
     private fun screenOn(): Boolean {
         val pm = getSystemService(PowerManager::class.java)
@@ -136,10 +162,14 @@ class GuardService : Service() {
         lastTickUptime = up
         val on = screenOn()
 
-        val d = e.decide()
         // Während der Handy-Einrichtung (Setup-Assistent, FrohLock-Einrichtung) nie dazwischenfunken.
         val settingUp = !userSetupComplete() || SetupActivity.isActive
         val owner = DeviceOwner.isDeviceOwner(this)
+        // Löschschutz im einfachen Modus (1.0.7): fehlt der Geräteadministrator, ist gesperrt; Lösch-Seiten werden abgefangen.
+        val guarding = !settingUp && Tamper.active(this)
+        e.guardIncomplete = if (guarding && !WeakGuard.isAdminActive(this)) Tamper.INCOMPLETE else null
+        if (guarding) checkTamper()
+        val d = e.decide()
         val enforcing = d.locked && !settingUp
         lastLocked = enforcing
         var lockVisible = false
@@ -216,7 +246,9 @@ class GuardService : Service() {
         if (BuildConfig.ALLOW_DEBUGGING) android.util.Log.i("FrohLock", "weak fg=$fg real=$real allowed=$inAllowed resumed=${LockActivity.isResumed}")
         // Ohne Nutzungsdaten weiß FrohLock nicht, was vorne ist: dann nur echte Telefonate und die
         // ersten 60 s nach „Anrufen" frei lassen – Messenger brauchen die Nutzungsdaten-Erlaubnis.
-        val free = inAllowed || (fg == null && (CallState.busy(this) || now < LockActivity.callGraceUntilUptime))
+        // Schutz wieder einschalten (Knopf auf dem Sperrbildschirm): die Administrator-Seite muss dann offen sein dürfen.
+        val reArming = !WeakGuard.isAdminActive(this) && TamperRule.isAdminPage(fg, ForegroundApp.lastClass)
+        val free = inAllowed || reArming || (fg == null && (CallState.busy(this) || now < LockActivity.callGraceUntilUptime))
         if (free) { lockedInAllowed = true; WeakGuard.setOverlay(this, false); outsideSince = 0; return false }
 
         WeakGuard.setOverlay(this, true)
