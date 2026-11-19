@@ -282,6 +282,7 @@ class GuardService : Service() {
     private fun showMessageIfPending() {
         val m = Guard.enforcer.pendingMessage ?: return
         if (de.froehlichdienste.frohlock.ui.MessageActivity.isResumed) return
+        if (!MessageMedia.readyToShow(this, m, Guard.enforcer.nowMillis() / 1000)) return
         val now = SystemClock.uptimeMillis()
         if (now - lastMessageLaunch < 4_000) return
         lastMessageLaunch = now

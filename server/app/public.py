@@ -56,6 +56,18 @@ def download():
     return FileResponse(path, media_type="application/octet-stream", filename=INSTALLER_NAME)
 
 
+@router.api_route("/media/{name}", methods=["GET", "HEAD"])
+def media(name: str):
+    """Videos zu Eltern-Nachrichten (zufälliger Dateiname, nur .mp4 aus download/media)."""
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,80}\.mp4", name):
+        return HTMLResponse("Nicht gefunden", status_code=404)
+    path = os.path.join(settings.download_dir, "media", name)
+    if not os.path.exists(path):
+        return HTMLResponse("Nicht gefunden", status_code=404)
+    return FileResponse(path, media_type="video/mp4")
+
+
 @router.api_route("/apk", methods=["GET", "HEAD"])
 @router.api_route("/download/android", methods=["GET", "HEAD"])
 def download_android():

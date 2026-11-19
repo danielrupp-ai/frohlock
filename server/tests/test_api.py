@@ -673,8 +673,14 @@ def test_parent_message_waits_until_time_and_version(client):
         return out
 
     assert msgs() == []                     # 1.0.8 kennt die Nachricht nicht -> wartet
-    hb["appVersion"] = "1.0.9"
+    hb["appVersion"] = "1.0.10"
     client.post(f"/devices/{handy}/heartbeat", json=hb, headers=ha)
     assert msgs() == ["Jetzt"]              # die Geburtstagsnachricht erst ab ihrem Zeitpunkt
     page = client.get(f"/admin/devices/{handy}").text
     assert "Nachricht ans Kind" in page and "З днем народження!" in page
+
+
+def test_media_route_only_safe_names(client):
+    assert client.get("/media/..%2Fapp.db").status_code == 404
+    assert client.get("/media/short.mp4").status_code == 404
+    assert client.get("/media/abcdefghijklmnopqrstuvwx.mp4").status_code == 404

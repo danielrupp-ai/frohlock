@@ -200,11 +200,22 @@ class RuntimeState {
 }
 
 /** Nachricht der Eltern ans Kind (z. B. Geburtstagsgruß). Bleibt, bis das Kind sie mit dem Knopf bestätigt. */
-data class ParentMessage(val id: String, val title: String, val text: String, val button: String) {
+data class ParentMessage(
+    val id: String, val title: String, val text: String, val button: String,
+    /** Optional: Video (wird vorab geladen, beim ersten Ansehen in der Galerie gespeichert). */
+    val videoUrl: String = "", val videoSha256: String = "", val videoName: String = "",
+    /** Erst ab diesem Zeitpunkt zeigen (Unix-Sekunden, 0 = sofort) – Video kann vorher schon geladen werden. */
+    val showFromUnix: Long = 0,
+) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("text", text).put("button", button)
+        .put("videoUrl", videoUrl).put("videoSha256", videoSha256).put("videoName", videoName).put("showFromUnix", showFromUnix)
+
+    val hasVideo: Boolean get() = videoUrl.isNotBlank() && videoSha256.length == 64
 
     companion object {
         fun fromJson(o: JSONObject) = ParentMessage(o.optString("id", ""), o.optString("title", ""),
-            o.optString("text", ""), o.optString("button", "").ifBlank { "OK 💛" })
+            o.optString("text", ""), o.optString("button", "").ifBlank { "OK 💛" },
+            o.optString("videoUrl", ""), o.optString("videoSha256", ""), o.optString("videoName", ""),
+            o.optLong("showFromUnix", 0))
     }
 }

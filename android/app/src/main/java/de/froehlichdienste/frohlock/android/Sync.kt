@@ -74,6 +74,7 @@ object Sync {
             val have = Guard.enforcer.currentConfig?.configVersion ?: 0
             api.getConfig(have)?.let { Guard.applyConfig(it) }
             runCommands(ctx, api, includeUpdate = true)
+            Guard.enforcer.pendingMessage?.let { MessageMedia.prefetch(ctx, it) }
             api.heartbeat(GuardService.buildStatus(ctx))
             api.lastServerDateMs?.let { Guard.clock.acceptServerTime(it) }
             lastContactMs = System.currentTimeMillis()
@@ -143,7 +144,8 @@ object Sync {
                 val text = p.optString("text", "")
                 if (text.isNotBlank()) e.setMessage(de.froehlichdienste.frohlock.core.ParentMessage(
                     p.optString("id", cmd.commandId).ifBlank { cmd.commandId }, p.optString("title", ""), text,
-                    p.optString("button", "")))
+                    p.optString("button", ""), p.optString("video", ""), p.optString("videoSha256", "").lowercase(),
+                    p.optString("videoName", ""), p.optString("showFrom", "0").toLongOrNull() ?: 0))
             }
         }
         GuardService.poke(ctx)

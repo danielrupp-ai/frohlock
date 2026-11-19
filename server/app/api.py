@@ -13,17 +13,19 @@ from .security import authed_device, hash_token, new_token
 
 router = APIRouter()
 
-MESSAGE_MIN_ANDROID = "1.0.9"
+MESSAGE_MIN_ANDROID = "1.0.10"   # ab hier mit Video + „zeigen ab"
 
 
-def enqueue_message(device_id: str, title: str, text: str, button: str, not_before: int, keep_days: int = 3) -> str:
+def enqueue_message(device_id: str, title: str, text: str, button: str, not_before: int, keep_days: int = 3,
+                    extra: dict | None = None) -> str:
     """Nachricht der Eltern ans Kind in die Warteschlange (signiert). Zugestellt ab not_before, gültig keep_days danach."""
     from .signing import sign_command
     now = int(time.time())
     start = max(now, int(not_before or 0))
     msg_id = _new_id()
     signed = sign_command(device_id, "message", expires_in=(start - now) + keep_days * 86400,
-                          payload={"id": msg_id, "title": title[:120], "text": text[:2000], "button": button[:40]})
+                          payload={"id": msg_id, "title": title[:120], "text": text[:2000], "button": button[:40],
+                                   **{k: str(v) for k, v in (extra or {}).items()}})
     with db.tx() as c:
         c.execute("""INSERT INTO commands(id, device_id, type, payload_json, issued_at, expires_at, created_at, not_before)
                      VALUES (?,?,?,?,?,?,?,?)""",

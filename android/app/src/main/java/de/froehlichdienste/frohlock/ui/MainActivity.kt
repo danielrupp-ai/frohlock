@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private lateinit var schedule: TextView
     private lateinit var left: TextView
     private lateinit var updateCard: LinearLayout
+    private var videoButton: View? = null
     private lateinit var updateTitle: TextView
     private lateinit var updateMsg: TextView
 
@@ -86,6 +87,11 @@ class MainActivity : Activity() {
             addView(updateMsg)
         }
         col.addView(updateCard)
+        // Gespeichertes Geburtstagsvideo (o. ä.) jederzeit nochmal ansehen.
+        videoButton = Ui.button(this, "🎂  Моє відео – дивитися ще раз") {
+            val v = de.froehlichdienste.frohlock.android.MessageMedia.savedVideos(this).lastOrNull() ?: return@button
+            startActivity(Intent(this, MessageActivity::class.java).putExtra(MessageActivity.EXTRA_REPLAY, v.path))
+        }.also { it.visibility = View.GONE; col.addView(it) }
         col.addView(Ui.button(this, "🔑  Eltern-Bereich", primary = false) {
             startActivity(Intent(this, ParentActivity::class.java))
         })
@@ -96,8 +102,10 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume(); ui.post(refresher)
-        if (Guard.enforcer.pendingMessage != null)
+        val pm = Guard.enforcer.pendingMessage
+        if (pm != null && de.froehlichdienste.frohlock.android.MessageMedia.readyToShow(this, pm, Guard.enforcer.nowMillis() / 1000))
             startActivity(android.content.Intent(this, MessageActivity::class.java))
+        videoButton?.visibility = if (de.froehlichdienste.frohlock.android.MessageMedia.savedVideos(this).isNotEmpty()) View.VISIBLE else View.GONE
     }
     override fun onPause() { ui.removeCallbacks(refresher); super.onPause() }
 
