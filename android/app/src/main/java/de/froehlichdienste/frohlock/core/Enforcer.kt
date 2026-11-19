@@ -206,6 +206,26 @@ class Enforcer(
         audit.write("AUSZEIT", "Aufgehoben ($reason)")
     }
 
+    // ---------- Nachricht der Eltern ----------
+
+    /** Neue Nachricht merken (ersetzt eine ältere, noch ungelesene). */
+    fun setMessage(m: ParentMessage) = synchronized(lock) {
+        state.message = m
+        save()
+        audit.write("NACHRICHT", "Erhalten: „${m.title.take(60)}“ – wird angezeigt, sobald der Bildschirm an ist")
+    }
+
+    val pendingMessage: ParentMessage? get() = synchronized(lock) { state.message }
+
+    /** Kind hat die Nachricht gelesen und bestätigt. */
+    fun messageRead(id: String) = synchronized(lock) {
+        val m = state.message ?: return
+        if (m.id != id) return
+        state.message = null
+        save()
+        audit.write("NACHRICHT", "Gelesen und bestätigt: „${m.title.take(60)}“")
+    }
+
     // ---------- Takt ----------
 
     /** Auszeit-Countdown – nur wenn sie sichtbar auf dem Bildschirm steht. */

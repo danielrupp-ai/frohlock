@@ -649,3 +649,32 @@ def test_shared_daily_account_across_devices(client):
     env = client.get(f"/devices/{handy}/config?have=0", headers=ha).json()
     cfg = json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
     assert cfg["dailyBudgetMinutes"] == 60   # wieder das eigene Limit
+
+
+def test_parent_message_waits_until_time_and_version(client):
+    import json, time
+    with open(PUB_PATH, "rb") as fh:
+        pub = load_pem_public_key(fh.read())
+    _admin_login(client)
+    handy, ha = _pair(client, "renat handy")
+    hb = {"deviceId": handy, "appVersion": "1.0.8", "platform": "android", "usageDay": "2026-11-19"}
+    client.post(f"/devices/{handy}/heartbeat", json=hb, headers=ha)
+
+    from app.api import enqueue_message
+    enqueue_message(handy, "З днем народження!", "Текст", "Дякую! 💛", int(time.time()) + 3600)
+    enqueue_message(handy, "Jetzt", "sofort", "OK", 0)
+
+    def msgs():
+        out = []
+        for env in client.get(f"/devices/{handy}/commands", headers=ha).json():
+            c = json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+            if c["type"] == 10:
+                out.append(c["payload"]["title"])
+        return out
+
+    assert msgs() == []                     # 1.0.8 kennt die Nachricht nicht -> wartet
+    hb["appVersion"] = "1.0.9"
+    client.post(f"/devices/{handy}/heartbeat", json=hb, headers=ha)
+    assert msgs() == ["Jetzt"]              # die Geburtstagsnachricht erst ab ihrem Zeitpunkt
+    page = client.get(f"/admin/devices/{handy}").text
+    assert "Nachricht ans Kind" in page and "З днем народження!" in page

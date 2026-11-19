@@ -80,6 +80,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Nachricht der Eltern ans Kind (z. B. Geburtstagsgruß) – Vollbild, auch während einer Sperre. -->
+        <activity
+            android:name=".ui.MessageActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="de.froehlichdienste.frohlock.message"
+            android:theme="@style/FrohLockTheme.Lock" />
+
         <activity android:name=".ui.ParentActivity" android:exported="false" android:excludeFromRecents="true" />
 
         <!-- Schritt „Einrichtung der App" mitten in der Handy-Einrichtung (nach dem QR-Code, Android 10+). -->

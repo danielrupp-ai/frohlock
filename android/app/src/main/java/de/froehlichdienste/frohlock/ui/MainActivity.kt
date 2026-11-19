@@ -94,7 +94,11 @@ class MainActivity : Activity() {
         setContentView(scroll)
     }
 
-    override fun onResume() { super.onResume(); ui.post(refresher) }
+    override fun onResume() {
+        super.onResume(); ui.post(refresher)
+        if (Guard.enforcer.pendingMessage != null)
+            startActivity(android.content.Intent(this, MessageActivity::class.java))
+    }
     override fun onPause() { ui.removeCallbacks(refresher); super.onPause() }
 
     private fun refresh() {

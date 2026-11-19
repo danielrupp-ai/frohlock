@@ -139,6 +139,12 @@ object Sync {
             CommandType.UPDATE -> Updater.tryUpdate(ctx, api)
             CommandType.UNINSTALL -> GuardService.releaseDevice(ctx, "Admin-Befehl „Entfernen“")
             CommandType.PING -> Unit
+            CommandType.MESSAGE -> cmd.payload?.let { p ->
+                val text = p.optString("text", "")
+                if (text.isNotBlank()) e.setMessage(de.froehlichdienste.frohlock.core.ParentMessage(
+                    p.optString("id", cmd.commandId).ifBlank { cmd.commandId }, p.optString("title", ""), text,
+                    p.optString("button", "")))
+            }
         }
         GuardService.poke(ctx)
     }

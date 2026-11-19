@@ -352,4 +352,18 @@ class ForegroundRuleTests {
         assertEquals(CommandType.SHARED_USAGE, c.type)
         assertEquals("30", c.payload!!.getString("minutes"))
     }
+
+    @Test
+    fun parentMessageStaysUntilRead() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 20, 8, 0))
+        val st = RuntimeState()
+        val en = Enforcer(clock, MemAudit(), st, {})
+        en.setMessage(ParentMessage("m1", "З днем народження, Ренате!", "Текст", "Дякую! 💛"))
+        val again = RuntimeState.fromJson(st.toJson())          // überlebt Neustart
+        assertEquals("Дякую! 💛", again.message!!.button)
+        en.messageRead("andere-id")
+        assertNotNull(en.pendingMessage)
+        en.messageRead("m1")
+        assertNull(en.pendingMessage)
+    }
 }

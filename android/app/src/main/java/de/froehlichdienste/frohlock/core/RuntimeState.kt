@@ -31,6 +31,8 @@ class RuntimeState {
     var ledgerAndroidSecondsToday = 0L
     /** Gemeinsames Tageskonto: was die anderen Geräte des Kindes heute verbraucht haben (vom Server). */
     var shared: SharedBudget.Usage? = null
+    /** Nachricht der Eltern, die noch angezeigt werden soll (null = keine). */
+    var message: ParentMessage? = null
 
     /** Tag, an dem zuletzt „Uhr lief rückwärts" gemeldet wurde (nur einmal je Tag). */
     var backwardsDayWarned = ""
@@ -153,6 +155,7 @@ class RuntimeState {
         .put("lastReminderKey", lastReminderKey)
         .put("lastUpdatePromptUnix", lastUpdatePromptUnix)
         .put("silentUpdateBlocked", silentUpdateBlocked)
+        .put("message", message?.toJson())
         .put("shared", shared?.let { JSONObject().put("day", it.day).put("minutes", it.minutes).put("detail", it.detail).put("issuedUnix", it.issuedUnix) })
 
     companion object {
@@ -188,9 +191,20 @@ class RuntimeState {
             lastReminderKey = o.optString("lastReminderKey", "")
             lastUpdatePromptUnix = o.optLong("lastUpdatePromptUnix")
             silentUpdateBlocked = o.optBoolean("silentUpdateBlocked")
+            message = o.optJSONObject("message")?.let { ParentMessage.fromJson(it) }
             shared = o.optJSONObject("shared")?.let {
                 SharedBudget.Usage(it.optString("day", ""), it.optInt("minutes"), it.optString("detail", ""), it.optLong("issuedUnix"))
             }
         }
+    }
+}
+
+/** Nachricht der Eltern ans Kind (z. B. Geburtstagsgruß). Bleibt, bis das Kind sie mit dem Knopf bestätigt. */
+data class ParentMessage(val id: String, val title: String, val text: String, val button: String) {
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("text", text).put("button", button)
+
+    companion object {
+        fun fromJson(o: JSONObject) = ParentMessage(o.optString("id", ""), o.optString("title", ""),
+            o.optString("text", ""), o.optString("button", "").ifBlank { "OK 💛" })
     }
 }

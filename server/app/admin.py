@@ -51,6 +51,15 @@ def _berlin_now():
         return datetime.datetime.now()
 
 
+def _berlin_fmt(ts: int) -> str:
+    import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.fromtimestamp(ts, ZoneInfo("Europe/Berlin")).strftime("%d.%m. %H:%M")
+    except Exception:
+        return time.strftime("%d.%m. %H:%M", time.localtime(ts))
+
+
 def _lock_state(dev, now: int) -> dict:
     """Ehrlicher Status fürs Eltern-Web. „gesperrt" heißt nur: FrohLock sperrt. Ist das Kind gerade in einer
     erlaubten App (Telegram/Signal) oder fehlt der Sperrbildschirm, ist das Handy trotzdem in Benutzung –
@@ -323,7 +332,22 @@ def device_detail(request: Request, device_id: str):
         # Limit-Felder zeigen das gemeinsame Limit des Kindes.
         cwb = ((child_summary["by_weekday"] or []) + [0] * 7)[:7]
         weekday_budgets = [{"idx": d, "label": lbl, "value": cwb[d]} for d, lbl in DAYS]
+    pending_msgs = []
+    for r in db.query("SELECT payload_json, not_before, acked, expires_at FROM commands WHERE device_id=? AND type=10 "
+                      "ORDER BY created_at DESC LIMIT 5", (device_id,)):
+        try:
+            env = json.loads(r["payload_json"])["envelope"]
+            import base64
+            body = json.loads(base64.b64decode(env["payloadBase64"]))
+            p = body.get("payload", {})
+        except Exception:
+            p = {}
+        nb = r["not_before"] or 0
+        pending_msgs.append({"title": p.get("title", ""), "acked": bool(r["acked"]),
+                             "from": _berlin_fmt(nb) if nb else "sofort",
+                             "expired": (r["expires_at"] or 0) < int(time.time())})
     return templates.TemplateResponse("device.html", {
+        "messages": pending_msgs,
         "child": child, "child_summary": child_summary, "children": shared.all_children(),
         "is_android": is_android,
         "lock_state": _lock_state(dev, int(time.time())),
@@ -439,6 +463,27 @@ def set_child(request: Request, device_id: str, child: str = Form("")):
     name = shared.assign(device_id, child)
     db.audit(request.session["admin_user"], "child", device_id, name or "(keinem Kind)")
     return RedirectResponse(f"/admin/devices/{device_id}?ok={'konto' if name else 'kontoweg'}#konto", status_code=303)
+
+
+@router.post("/admin/devices/{device_id}/message")
+def send_message(request: Request, device_id: str, title: str = Form(""), text: str = Form(...),
+                 button: str = Form("OK 💛"), show_from: str = Form("")):
+    """Nachricht ans Kind (Vollbild am Handy, bis es „Danke" tippt), optional erst ab einem Zeitpunkt."""
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    import datetime
+    not_before = 0
+    if show_from:
+        try:
+            dt = datetime.datetime.fromisoformat(show_from)
+            from zoneinfo import ZoneInfo
+            not_before = int(dt.replace(tzinfo=ZoneInfo("Europe/Berlin")).timestamp())
+        except Exception:
+            not_before = 0
+    from .api import enqueue_message
+    cid = enqueue_message(device_id, title.strip(), text.strip(), button.strip() or "OK 💛", not_before)
+    db.audit(request.session["admin_user"], "message", device_id, f"{title.strip()[:60]} ab {show_from or 'sofort'} ({cid[:8]})")
+    return RedirectResponse(f"/admin/devices/{device_id}?ok=nachricht#nachricht", status_code=303)
 
 
 @router.post("/admin/devices/{device_id}/command")

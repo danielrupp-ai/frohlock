@@ -199,6 +199,7 @@ class GuardService : Service() {
         }
 
         Reminders.check(this, e.minutesUntilLock())
+        if (on && !settingUp) showMessageIfPending()
 
         val st = Guard.state
         st.lastTickWallUnix = System.currentTimeMillis() / 1000
@@ -215,6 +216,7 @@ class GuardService : Service() {
     /** Voller Schutz: Im Sperr-Modus kann nur Erlaubtes vorne sein (Telegram, Signal, Telefon, Wecker). */
     private fun enforceOwner(on: Boolean): Boolean {
         if (LockActivity.isResumed) return true
+        if (de.froehlichdienste.frohlock.ui.MessageActivity.isResumed) return true   // Nachricht der Eltern liegt vorn
         if (DeviceOwner.lockTaskActive(this)) { lockedInAllowed = true; return false }   // Kind ist in einer erlaubten App
         if (on) relaunchLock()
         val now = SystemClock.uptimeMillis()
@@ -235,6 +237,8 @@ class GuardService : Service() {
     private fun enforceWeak(on: Boolean): Boolean {
         val now = SystemClock.uptimeMillis()
         if (LockActivity.isResumed) { WeakGuard.setOverlay(this, false); outsideSince = 0; return true }
+        // Nachricht der Eltern (FrohLocks eigener Bildschirm, nur Lesen + „Danke") darf auch in der Sperre vorn liegen.
+        if (de.froehlichdienste.frohlock.ui.MessageActivity.isResumed) { WeakGuard.setOverlay(this, false); outsideSince = 0; return true }
         val fg = ForegroundApp.current(this)
         // System-Dialog vorne (Berechtigung, Teilen, Fotoauswahl)? Dann zählt die echte App darunter –
         // sonst wäre „Video starten, Dialog aufklappen, weiterschauen" ein Schlupfloch (1.0.6).
@@ -269,6 +273,24 @@ class GuardService : Service() {
             }
         }
         return WeakGuard.isShowing
+    }
+
+    private var lastMessageLaunch = 0L
+    private var notifiedMessageId = ""
+
+    /** Nachricht der Eltern nach vorn holen (Vollbild), solange sie ungelesen ist. Auch während einer Sperre. */
+    private fun showMessageIfPending() {
+        val m = Guard.enforcer.pendingMessage ?: return
+        if (de.froehlichdienste.frohlock.ui.MessageActivity.isResumed) return
+        val now = SystemClock.uptimeMillis()
+        if (now - lastMessageLaunch < 4_000) return
+        lastMessageLaunch = now
+        try {
+            startActivity(Intent(this, de.froehlichdienste.frohlock.ui.MessageActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        } catch (_: Exception) { }
+        // Rückfall, falls Android den Start aus dem Hintergrund verbietet: Benachrichtigung zum Antippen (einmal je Nachricht).
+        if (notifiedMessageId != m.id) { notifiedMessageId = m.id; Reminders.notifyMessage(this, m.title) }
     }
 
     private fun relaunchLock() {

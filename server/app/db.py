@@ -111,6 +111,8 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN silence_alert_at INTEGER DEFAULT 0",
     # Gemeinsames Tageskonto: Geräte mit gleichem Kind teilen sich EIN Tageslimit (19.11.2026).
     "ALTER TABLE devices ADD COLUMN child TEXT",
+    # Nachricht ans Kind erst ab einem Zeitpunkt zustellen (z. B. Geburtstag um 0 Uhr).
+    "ALTER TABLE commands ADD COLUMN not_before INTEGER DEFAULT 0",
 ]
 
 

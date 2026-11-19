@@ -116,6 +116,27 @@
 </div>
 {% endif %}
 
+{% if is_android %}
+<div class="card" id="nachricht">
+  <h2>💌 Nachricht ans Kind</h2>
+  <p class="muted" style="margin:0 0 10px">Erscheint am Handy als Vollbild (auch während einer Sperre), bis das Kind den Knopf tippt. Braucht FrohLock 1.0.9 – bis dahin wartet sie.</p>
+  <form method="post" action="/admin/devices/{{ dev['id'] }}/message">
+    <div class="row">
+      <label class="muted">Überschrift <input name="title" maxlength="120" style="width:260px"></label>
+      <label class="muted">Knopf <input name="button" value="OK 💛" maxlength="40" style="width:120px"></label>
+      <label class="muted">Zeigen ab (leer = sofort) <input name="show_from" type="datetime-local"></label>
+    </div>
+    <textarea name="text" rows="6" required style="width:100%;margin-top:8px"></textarea>
+    <button style="margin-top:8px" type="submit">Nachricht speichern</button>
+  </form>
+  {% if messages %}
+  <ul class="muted" style="margin:10px 0 0">
+    {% for m in messages %}<li>„{{ m.title }}“ – ab {{ m.from }} · {% if m.acked %}✅ am Gerät angekommen{% elif m.expired %}abgelaufen{% else %}⏳ wartet{% endif %}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card" id="konto">
   <h2>👧👦 Gemeinsames Tageskonto</h2>
   {% if child_summary %}

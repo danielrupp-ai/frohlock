@@ -133,6 +133,16 @@ object Reminders {
         try { ctx.getSystemService(NotificationManager::class.java).notify(4, n) } catch (_: Exception) { }
     }
 
+    fun notifyMessage(ctx: Context, title: String) {
+        ensureChannel(ctx)
+        val pi = PendingIntent.getActivity(ctx, 5, Intent(ctx, de.froehlichdienste.frohlock.ui.MessageActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = Notification.Builder(ctx, CH).setSmallIcon(R.drawable.ic_stat_lock)
+            .setContentTitle(title.ifBlank { "💌" }).setContentText("💌 👆")
+            .setAutoCancel(true).setContentIntent(pi).build()
+        try { ctx.getSystemService(NotificationManager::class.java).notify(5, n) } catch (_: Exception) { }
+    }
+
     fun notifyRemoved(ctx: Context) {
         ensureChannel(ctx)
         notify(ctx, 3, "FrohLock wurde freigegeben", "Alle Sperren sind aufgehoben. Die App kann jetzt normal deinstalliert werden.")

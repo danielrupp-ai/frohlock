@@ -115,11 +115,13 @@ object CommandType {
     const val CLEAR_TIMEOUT = 8
     /** Gemeinsames Tageskonto: Minuten der anderen Geräte des Kindes (payload day/minutes/detail). */
     const val SHARED_USAGE = 9
+    /** Nachricht der Eltern ans Kind (payload id/title/text/button) – Vollbild, bis das Kind „Danke" tippt. */
+    const val MESSAGE = 10
 
     fun name(t: Int) = when (t) {
         UNLOCK -> "Unlock"; LOCK -> "Lock"; UPDATE_CONFIG -> "UpdateConfig"; RESET_PIN -> "ResetPin"
         UNINSTALL -> "Uninstall"; UPDATE -> "Update"; PING -> "Ping"; TIMEOUT -> "Timeout"
-        CLEAR_TIMEOUT -> "ClearTimeout"; SHARED_USAGE -> "SharedUsage"; else -> "Typ$t"
+        CLEAR_TIMEOUT -> "ClearTimeout"; SHARED_USAGE -> "SharedUsage"; MESSAGE -> "Message"; else -> "Typ$t"
     }
 }
 
@@ -140,7 +142,7 @@ data class DeviceCommand(
                 is Number -> rawType.toInt()
                 is String -> rawType.toIntOrNull() ?: when (rawType.lowercase()) {
                     "unlock" -> 0; "lock" -> 1; "updateconfig" -> 2; "resetpin" -> 3; "uninstall" -> 4
-                    "update" -> 5; "ping" -> 6; "timeout" -> 7; "cleartimeout" -> 8; "sharedusage" -> 9; else -> -1
+                    "update" -> 5; "ping" -> 6; "timeout" -> 7; "cleartimeout" -> 8; "sharedusage" -> 9; "message" -> 10; else -> -1
                 }
                 else -> -1
             }

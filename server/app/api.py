@@ -13,6 +13,23 @@ from .security import authed_device, hash_token, new_token
 
 router = APIRouter()
 
+MESSAGE_MIN_ANDROID = "1.0.9"
+
+
+def enqueue_message(device_id: str, title: str, text: str, button: str, not_before: int, keep_days: int = 3) -> str:
+    """Nachricht der Eltern ans Kind in die Warteschlange (signiert). Zugestellt ab not_before, gültig keep_days danach."""
+    from .signing import sign_command
+    now = int(time.time())
+    start = max(now, int(not_before or 0))
+    msg_id = _new_id()
+    signed = sign_command(device_id, "message", expires_in=(start - now) + keep_days * 86400,
+                          payload={"id": msg_id, "title": title[:120], "text": text[:2000], "button": button[:40]})
+    with db.tx() as c:
+        c.execute("""INSERT INTO commands(id, device_id, type, payload_json, issued_at, expires_at, created_at, not_before)
+                     VALUES (?,?,?,?,?,?,?,?)""",
+                  (signed["commandId"], device_id, 10, json.dumps(signed), now, start + keep_days * 86400, now, start))
+    return signed["commandId"]
+
 
 def _require_self(request: Request, device_id: str) -> str:
     authed = authed_device(request)
@@ -200,8 +217,9 @@ def get_commands(device_id: str, request: Request):
     # Abgelaufene Befehle nicht endlos neu ausliefern (das Gerät verwirft sie ohnehin).
     rows = db.query(
         """SELECT id, type, payload_json FROM commands WHERE device_id=? AND acked=0
-               AND (expires_at IS NULL OR expires_at=0 OR expires_at>?) ORDER BY created_at ASC""",
-        (device_id, now),
+               AND (expires_at IS NULL OR expires_at=0 OR expires_at>?)
+               AND (not_before IS NULL OR not_before<=?) ORDER BY created_at ASC""",
+        (device_id, now, now),
     )
     # Auszeit-Befehle erst ab v0.20.0 ausliefern – ältere Clients kennen sie nicht und würden sie
     # quittieren, ohne zu sperren. Bis zum Update bleiben sie in der Warteschlange.
@@ -214,6 +232,10 @@ def get_commands(device_id: str, request: Request):
     for r in rows:
         payload = json.loads(r["payload_json"])
         if r["type"] in (7, 8) and not knows_timeout:
+            continue
+        # Nachricht ans Kind: nur Android ab 1.0.9 kann sie zeigen – bis dahin bleibt sie in der Warteschlange.
+        if r["type"] == 10 and not (platform == "android" and
+                                    not _version_older((dev_row["app_version"] if dev_row else "") or "0", MESSAGE_MIN_ANDROID)):
             continue
         out.append(payload["envelope"])
 
