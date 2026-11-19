@@ -16,7 +16,10 @@ public sealed class DeviceStatus
     public long LastBootUnix { get; set; }
 
     // Tages-Gesamtnutzung / Limit.
+    /// <summary>NUR die Zeit dieses Geräts (der Server addiert die Geräte eines Kindes selbst).</summary>
     public int UsageMinutesToday { get; set; }
+    /// <summary>Gemeinsames Tageskonto: Minuten der anderen Geräte, die hier fürs Limit mitzählen.</summary>
+    public int OtherDevicesMinutesToday { get; set; }
     public int DailyBudgetMinutes { get; set; }
     public string UsageDay { get; set; } = "";
     public List<UsageSegmentView> UsageSegments { get; set; } = new();

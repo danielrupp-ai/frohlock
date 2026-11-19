@@ -10,7 +10,8 @@ public enum CommandType
     Update,        // Selbst-Update anstoßen
     Ping,
     Timeout,       // Auszeit (UnlockMinutes = Minuten), addiert sich zu offener Auszeit
-    ClearTimeout   // offene Auszeit aufheben
+    ClearTimeout,  // offene Auszeit aufheben
+    SharedUsage    // gemeinsames Tageskonto: Minuten der anderen Geräte des Kindes (Payload day/minutes/detail)
 }
 
 /// <summary>Ein vom Server signierter Fernbefehl. Ohne gültige Signatur wird er verworfen.</summary>

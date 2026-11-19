@@ -53,6 +53,7 @@ def make_envelope(payload: dict) -> dict:
 CMD = {
     "unlock": 0, "lock": 1, "updateConfig": 2, "resetPin": 3,
     "uninstall": 4, "update": 5, "ping": 6, "timeout": 7, "clearTimeout": 8,
+    "sharedUsage": 9,
 }
 
 

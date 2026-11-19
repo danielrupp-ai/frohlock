@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from . import alerts, android, configbuilder, db
+from . import alerts, android, configbuilder, db, shared
 from .config import settings
 from .schemas import ConfigDraft, HeartbeatIn, RegisterRequest, RegisterResponse
 from .security import authed_device, hash_token, new_token
@@ -216,6 +216,20 @@ def get_commands(device_id: str, request: Request):
         if r["type"] in (7, 8) and not knows_timeout:
             continue
         out.append(payload["envelope"])
+
+    # Gemeinsames Tageskonto: was die anderen Geräte des Kindes heute schon verbraucht haben (signiert,
+    # bei jedem Abruf frisch, nicht gespeichert, braucht kein Ack). Nur an Geräte, die den Befehl kennen.
+    try:
+        min_ver = shared.MIN_ANDROID if platform == "android" else shared.MIN_WINDOWS
+        if dev_row and not _version_older(dev_row["app_version"] or "0", min_ver):
+            o = shared.others_today(device_id)
+            if o:
+                from .signing import sign_command
+                day, minutes, detail = o
+                out.append(sign_command(device_id, "sharedUsage", expires_in=600,
+                                        payload={"day": day, "minutes": str(minutes), "detail": detail[:200]})["envelope"])
+    except Exception:
+        pass
 
     # Selbst-nachlieferndes Update: solange das Gerät eine ÄLTERE Version meldet, bei JEDEM
     # Poll erneut ein Update-Kommando anbieten (robust gegen abgebrochene Downloads bei wackligem Netz).

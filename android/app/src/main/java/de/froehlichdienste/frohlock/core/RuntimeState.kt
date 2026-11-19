@@ -29,6 +29,9 @@ class RuntimeState {
     var ledgerBaseOwnSeconds = 0L
     /** Letzter Stand der Android-Gegenprobe (nur Anzeige im Admin). */
     var ledgerAndroidSecondsToday = 0L
+    /** Gemeinsames Tageskonto: was die anderen Geräte des Kindes heute verbraucht haben (vom Server). */
+    var shared: SharedBudget.Usage? = null
+
     /** Tag, an dem zuletzt „Uhr lief rückwärts" gemeldet wurde (nur einmal je Tag). */
     var backwardsDayWarned = ""
 
@@ -109,6 +112,10 @@ class RuntimeState {
     private fun sameDay(day: LocalDate): Boolean { val d = day.toString(); return usageDay == d || (usageDay.isNotEmpty() && usageDay > d) }
 
     fun usageMinutes(day: LocalDate) = if (sameDay(day)) (usageSecondsToday / 60).toInt() else 0
+    /** Minuten der anderen Geräte, die heute mitzählen (gemeinsames Tageskonto). */
+    fun otherDevicesMinutes(day: LocalDate) = SharedBudget.othersToday(shared, day.toString())
+    /** Fürs Tageslimit: eigene Zeit + andere Geräte. */
+    fun budgetMinutesUsed(day: LocalDate) = usageMinutes(day) + otherDevicesMinutes(day)
     fun segments(day: LocalDate): List<UsageSegment> = if (sameDay(day)) usageSegmentsToday else emptyList()
     fun onSeconds(day: LocalDate) = if (sameDay(day)) onSecondsToday else 0L
     fun allowedInLockMinutes(day: LocalDate) = if (sameDay(day)) (allowedInLockSecondsToday / 60).toInt() else 0
@@ -146,6 +153,7 @@ class RuntimeState {
         .put("lastReminderKey", lastReminderKey)
         .put("lastUpdatePromptUnix", lastUpdatePromptUnix)
         .put("silentUpdateBlocked", silentUpdateBlocked)
+        .put("shared", shared?.let { JSONObject().put("day", it.day).put("minutes", it.minutes).put("detail", it.detail).put("issuedUnix", it.issuedUnix) })
 
     companion object {
         fun fromJson(o: JSONObject): RuntimeState = RuntimeState().apply {
@@ -180,6 +188,9 @@ class RuntimeState {
             lastReminderKey = o.optString("lastReminderKey", "")
             lastUpdatePromptUnix = o.optLong("lastUpdatePromptUnix")
             silentUpdateBlocked = o.optBoolean("silentUpdateBlocked")
+            shared = o.optJSONObject("shared")?.let {
+                SharedBudget.Usage(it.optString("day", ""), it.optInt("minutes"), it.optString("detail", ""), it.optLong("issuedUnix"))
+            }
         }
     }
 }

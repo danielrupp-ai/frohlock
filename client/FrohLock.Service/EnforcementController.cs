@@ -279,8 +279,8 @@ public sealed class EnforcementController
             // Optionales Tages-Gesamtlimit (Wochentag-Wert vor Standard).
             bool graceActive = unlockUntilLocal is { } u && localNow < u;
             return BudgetPolicy.Apply(baseDec, _config.EffectiveDailyBudget(localNow.DayOfWeek),
-                _state.UsageMinutesToday(localNow), graceActive,
-                unlockUntilLocal?.ToString("HH:mm"));
+                _state.BudgetMinutesUsedToday(localNow), graceActive,
+                unlockUntilLocal?.ToString("HH:mm"), _state.OtherDevicesMinutesToday(localNow));
         }
     }
 
@@ -417,7 +417,8 @@ public sealed class EnforcementController
 
     public int TodayUsageMinutes()
     {
-        lock (_gate) return _state.UsageMinutesToday(_clock.UtcNow.ToLocalTime());
+        // Anzeige beim Kind: bei gemeinsamem Tageskonto die Zeit aller Geräte (passt zu „noch X übrig").
+        lock (_gate) return _state.BudgetMinutesUsedToday(_clock.UtcNow.ToLocalTime());
     }
 
     /// <summary>Von wann bis wann heute genutzt wurde (lokale Uhrzeit, Pausen ≤ 5 min zusammengefasst).</summary>
@@ -471,7 +472,7 @@ public sealed class EnforcementController
             int budgetToday = _config.EffectiveDailyBudget(localNow.DayOfWeek);
             if (budgetToday > 0)
             {
-                int rem = budgetToday - _state.UsageMinutesToday(localNow);
+                int rem = budgetToday - _state.BudgetMinutesUsedToday(localNow);
                 budgetMin = rem > 0 ? rem : 0;
             }
             // Kleineren nicht-negativen Wert nehmen (was zuerst sperrt).
@@ -530,6 +531,28 @@ public sealed class EnforcementController
         }
     }
 
+    /// <summary>
+    /// Gemeinsames Tageskonto: Minuten der anderen Geräte vom Server übernehmen. Kommt bei jedem Abruf –
+    /// gespeichert/protokolliert wird nur, wenn sich etwas ändert (einmal je Tag eine Zeile).
+    /// </summary>
+    public void SetSharedUsage(string day, int minutes, string detail, long issuedUnix)
+    {
+        lock (_gate)
+        {
+            var today = _clock.UtcNow.ToLocalTime().ToString("yyyy-MM-dd");
+            var next = SharedBudget.Accept(_state.SharedUsage, day, minutes, detail, issuedUnix, today);
+            if (next is null) return;
+            var prev = _state.SharedUsage;
+            bool firstToday = prev is null || prev.Day != next.Day;
+            bool changed = firstToday || prev!.Minutes != next.Minutes || prev.Detail != next.Detail;
+            _state.SharedUsage = next;
+            if (!changed) return;   // nur neuere Ausgabezeit -> nicht jedes Mal auf die Platte
+            _state.Save();
+            if (firstToday)
+                _audit.Write("KONTO", $"Gemeinsames Tageskonto: andere Geräte heute {next.Minutes} min ({next.Detail})");
+        }
+    }
+
     /// <summary>Fern-Entsperrung für n Minuten.</summary>
     public void RemoteUnlock(int minutes, string reason)
     {
@@ -565,6 +588,7 @@ public sealed class EnforcementController
                 PinFailuresToday = _state.PinFailuresToday,
                 LastBootUnix = _state.LastBootUnix,
                 UsageMinutesToday = _state.UsageMinutesToday(localNow),
+                OtherDevicesMinutesToday = _state.OtherDevicesMinutesToday(localNow),
                 DailyBudgetMinutes = _config?.EffectiveDailyBudget(localNow.DayOfWeek) ?? 0,
                 UsageDay = localNow.ToString("yyyy-MM-dd"),
                 UsageSegments = TodayUsageSegmentsNoLock(),

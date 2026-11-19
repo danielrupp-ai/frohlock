@@ -306,4 +306,50 @@ class ForegroundRuleTests {
         // Dialog ohne bekannte App darunter → unbekannt → nicht erlaubt.
         assertNull(ForegroundRule.effective("android", null, system))
     }
+
+    @Test
+    fun sharedDailyAccountLocksOnCombinedTime() {
+        // Daniel 19.11.2026: 2 Std am Tag – egal ob Laptop oder Handy.
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 19, 15, 0))
+        val st = RuntimeState()
+        val en = Enforcer(clock, MemAudit(), st, {})
+        en.setConfig(cfg(budget = 120))
+        en.accrueUsage(80 * 60)                                       // Handy selbst: 80 Min
+        assertFalse(en.decide().locked)
+        assertEquals(40, en.minutesUntilLock())
+
+        assertTrue(en.setSharedUsage("2026-11-19", 30, "Laptop renat 30 Min", 100))
+        assertFalse(en.decide().locked)                               // 110 von 120
+        assertEquals(110, en.todayUsageMinutes())
+        assertEquals(10, en.minutesUntilLock())
+        assertFalse("gleicher Stand -> nichts zu tun", en.setSharedUsage("2026-11-19", 30, "Laptop renat 30 Min", 110))
+
+        assertTrue(en.setSharedUsage("2026-11-19", 40, "Laptop renat 40 Min", 120))
+        val d = en.decide()
+        assertTrue(d.locked)
+        assertTrue(d.reason, d.reason.contains("120/120") && d.reason.contains("40 min am anderen Gerät"))
+
+        // Älterer (wieder eingespielter) Stand und anderer Tag werden verworfen.
+        assertFalse(en.setSharedUsage("2026-11-19", 0, "", 50))
+        assertFalse(en.setSharedUsage("2026-11-18", 0, "", 500))
+        assertTrue(en.decide().locked)
+
+        // Heartbeat meldet nur die eigene Zeit (Server addiert selbst), Zustand überlebt Neustart.
+        assertEquals(80, en.buildStatus("1.0.8", true, 0).getInt("usageMinutesToday"))
+        assertEquals(40, RuntimeState.fromJson(st.toJson()).otherDevicesMinutes(java.time.LocalDate.of(2026, 11, 19)))
+
+        // Neuer Tag: fremde Minuten zählen nicht mehr.
+        clock.t = LocalDateTime.of(2026, 11, 20, 9, 0)
+        assertFalse(en.decide().locked)
+        assertEquals(0, en.todayOtherDevicesMinutes())
+    }
+
+    @Test
+    fun sharedUsageCommandParses() {
+        val o = JSONObject("""{"commandId":"x","deviceId":"d","type":9,"issuedAtUnix":5,"expiresAtUnix":605,
+            "payload":{"day":"2026-11-19","minutes":"30","detail":"renat handy 30 Min"}}""")
+        val c = DeviceCommand.fromJson(o)
+        assertEquals(CommandType.SHARED_USAGE, c.type)
+        assertEquals("30", c.payload!!.getString("minutes"))
+    }
 }

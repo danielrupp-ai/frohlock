@@ -72,12 +72,33 @@ class ScheduleEngine(private val config: LockConfig) {
 }
 
 object BudgetPolicy {
-    fun apply(base: Decision, budgetMinutes: Int, usedMinutes: Int, graceActive: Boolean, graceUntil: String?): Decision {
+    /** [usedMinutes] = Gesamtnutzung heute (bei gemeinsamem Tageskonto inkl. anderer Geräte), [otherMinutes] nur für den Text. */
+    fun apply(base: Decision, budgetMinutes: Int, usedMinutes: Int, graceActive: Boolean, graceUntil: String?,
+              otherMinutes: Int = 0): Decision {
         if (base.locked) return base
         if (budgetMinutes <= 0) return base
         if (usedMinutes < budgetMinutes) return base
         return if (graceActive) Decision.unlocked("Zusatzzeit bis $graceUntil")
+        else if (otherMinutes > 0) Decision.locked("Tageslimit erreicht ($usedMinutes/$budgetMinutes min, davon $otherMinutes min am anderen Gerät)")
         else Decision.locked("Tageslimit erreicht ($usedMinutes/$budgetMinutes min)")
+    }
+}
+
+/**
+ * Gemeinsames Tageskonto (19.11.2026, Port von SharedBudget.cs): Der Server schickt signiert, wie viele Minuten
+ * die ANDEREN Geräte des Kindes heute verbraucht haben. Fürs Limit zählt eigene Zeit + diese Minuten.
+ */
+object SharedBudget {
+    data class Usage(val day: String, val minutes: Int, val detail: String, val issuedUnix: Long)
+
+    fun othersToday(s: Usage?, todayKey: String): Int = if (s != null && s.day == todayKey) maxOf(0, s.minutes) else 0
+
+    /** Nur für HEUTE und nicht älter als der gespeicherte Stand – sonst null (= verwerfen). */
+    fun accept(current: Usage?, day: String, minutes: Int, detail: String, issuedUnix: Long, todayKey: String): Usage? {
+        if (day.isEmpty() || day != todayKey) return null
+        if (minutes < 0 || minutes > 24 * 60 * 10) return null
+        if (current != null && current.day == day && issuedUnix < current.issuedUnix) return null
+        return Usage(day, minutes, detail, issuedUnix)
     }
 }
 

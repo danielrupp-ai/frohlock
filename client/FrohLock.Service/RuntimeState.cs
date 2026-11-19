@@ -22,6 +22,8 @@ public sealed class RuntimeState
     public string UsageDay { get; set; } = "";       // yyyy-MM-dd (Vertrauenszeit, lokal)
     public long UsageSecondsToday { get; set; }
     public List<UsageSegment> UsageSegmentsToday { get; set; } = new(); // von wann bis wann
+    /// <summary>Gemeinsames Tageskonto: was die anderen Geräte des Kindes heute verbraucht haben (vom Server).</summary>
+    public SharedUsage? SharedUsage { get; set; }
 
     // Auszeit („gestört ohne Notfall"): Restsekunden, läuft nur bei sichtbarem Bildschirm ab.
     public long PenaltySecondsRemaining { get; set; }
@@ -112,6 +114,14 @@ public sealed class RuntimeState
 
     public List<UsageSegment> SegmentsToday(DateTime trustedLocalNow)
         => UsageDay == trustedLocalNow.ToString("yyyy-MM-dd") ? UsageSegmentsToday : new List<UsageSegment>();
+
+    /// <summary>Minuten der anderen Geräte des Kindes, die heute mitzählen.</summary>
+    public int OtherDevicesMinutesToday(DateTime trustedLocalNow)
+        => SharedBudget.OthersToday(SharedUsage, trustedLocalNow.ToString("yyyy-MM-dd"));
+
+    /// <summary>Fürs Tageslimit: eigene Zeit + andere Geräte (gemeinsames Tageskonto).</summary>
+    public int BudgetMinutesUsedToday(DateTime trustedLocalNow)
+        => UsageMinutesToday(trustedLocalNow) + OtherDevicesMinutesToday(trustedLocalNow);
 
     public int UsageMinutesToday(DateTime trustedLocalNow)
     {

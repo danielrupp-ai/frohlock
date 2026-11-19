@@ -51,6 +51,13 @@ def build_full_config(device_id: str) -> dict | None:
     if not stored:
         return None
     version, draft = stored
+    # Gemeinsames Tageskonto: gehört das Gerät zu einem Kind, gilt DESSEN Limit (für alle Geräte gleich).
+    from . import shared
+    child = shared.get_child(shared.child_of(device_id))
+    if child:
+        draft = dict(draft)
+        draft["dailyBudgetMinutes"] = child["dailyBudgetMinutes"]
+        draft["dailyBudgetByWeekday"] = child["dailyBudgetByWeekday"]
 
     return {
         "configVersion": version,
@@ -69,6 +76,14 @@ def build_full_config(device_id: str) -> dict | None:
         "failSecureLocked": True,
         "alwaysAllowedApps": draft.get("alwaysAllowedApps", DEFAULT_ALLOWED_APPS),
     }
+
+
+def bump_version(device_id: str) -> int:
+    """Gleiche Einstellungen, neue Version – damit das Gerät die Config neu holt (z. B. Kind-Limit geändert)."""
+    stored = get_stored(device_id)
+    if not stored:
+        return 0
+    return save_draft(device_id, stored[1])
 
 
 def signed_config_envelope(device_id: str) -> dict | None:

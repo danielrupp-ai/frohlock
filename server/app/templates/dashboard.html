@@ -17,7 +17,13 @@
         {% if s.hint %}<br><span class="muted" style="font-size:12px;color:#ffab40">{{ s.hint }}</span>{% endif %}
       </td>
       <td class="muted">
+        {% set cs = shared_by_dev.get(d["id"]) %}
+        {% if cs %}
+        {{ d["usage_today"] or 0 }} min hier
+        <br><span style="{% if cs.over %}color:#ff8a80{% endif %}">{{ cs.name }} zusammen: {{ cs.used }}{% if cs.budget > 0 %} / {{ cs.budget }}{% endif %} min</span>
+        {% else %}
         {{ d["usage_today"] or 0 }} min{% if d["budget_minutes"] and d["budget_minutes"] > 0 %} / {{ d["budget_minutes"] }}{% endif %}
+        {% endif %}
       </td>
       <td class="muted">{{ d["app_version"] or "–" }}</td>
       <td class="muted">

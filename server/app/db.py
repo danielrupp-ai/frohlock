@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS reset_tokens (
     used INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS children (
+    name TEXT PRIMARY KEY,
+    daily_budget INTEGER NOT NULL DEFAULT 0,
+    budget_by_weekday TEXT,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS usage_daily (
     device_id TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -102,6 +109,8 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN lock_hidden_alert_at INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN tamper_alert_at INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN silence_alert_at INTEGER DEFAULT 0",
+    # Gemeinsames Tageskonto: Geräte mit gleichem Kind teilen sich EIN Tageslimit (19.11.2026).
+    "ALTER TABLE devices ADD COLUMN child TEXT",
 ]
 
 

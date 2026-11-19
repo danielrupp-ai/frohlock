@@ -98,8 +98,8 @@ class Enforcer(
         if (incomplete != null && !(unlockUntil != null && now.isBefore(unlockUntil))) return Decision.locked(incomplete)
         val base = e.decide(now, 0, unlockUntil)
         val graceActive = unlockUntil != null && now.isBefore(unlockUntil)
-        return BudgetPolicy.apply(base, c.effectiveDailyBudget(now.dow()), state.usageMinutes(now.toLocalDate()),
-            graceActive, unlockUntil?.format(ScheduleEngine.HM))
+        return BudgetPolicy.apply(base, c.effectiveDailyBudget(now.dow()), state.budgetMinutesUsed(now.toLocalDate()),
+            graceActive, unlockUntil?.format(ScheduleEngine.HM), state.otherDevicesMinutes(now.toLocalDate()))
     }
 
     // ---------- PIN ----------
@@ -280,7 +280,26 @@ class Enforcer(
 
     // ---------- Anzeige ----------
 
-    fun todayUsageMinutes(): Int = synchronized(lock) { state.usageMinutes(localNow().toLocalDate()) }
+    /** Anzeige beim Kind: bei gemeinsamem Tageskonto die Zeit ALLER Geräte (passt zu „noch X übrig"). */
+    fun todayUsageMinutes(): Int = synchronized(lock) { state.budgetMinutesUsed(localNow().toLocalDate()) }
+    fun todayOtherDevicesMinutes(): Int = synchronized(lock) { state.otherDevicesMinutes(localNow().toLocalDate()) }
+
+    /**
+     * Gemeinsames Tageskonto: Minuten der anderen Geräte vom Server übernehmen (kommt bei jedem Abruf).
+     * Liefert true, wenn sich etwas geändert hat – gespeichert/protokolliert wird nur dann (Protokoll einmal je Tag).
+     */
+    fun setSharedUsage(day: String, minutes: Int, detail: String, issuedUnix: Long): Boolean = synchronized(lock) {
+        val today = localNow().toLocalDate().toString()
+        val next = SharedBudget.accept(state.shared, day, minutes, detail, issuedUnix, today) ?: return false
+        val prev = state.shared
+        val firstToday = prev == null || prev.day != next.day
+        val changed = firstToday || prev!!.minutes != next.minutes || prev.detail != next.detail
+        state.shared = next
+        if (!changed) return false
+        save()
+        if (firstToday) audit.write("KONTO", "Gemeinsames Tageskonto: andere Geräte heute ${next.minutes} min (${next.detail})")
+        true
+    }
     fun todayBudgetMinutes(): Int = synchronized(lock) { config?.effectiveDailyBudget(localNow().dow()) ?: 0 }
     fun todaySegments(): List<UsageSegmentView> = synchronized(lock) {
         UsageTimeline.toViews(state.segments(localNow().toLocalDate()), clock.zone)
@@ -308,7 +327,7 @@ class Enforcer(
         val now = localNow()
         val sched = e.minutesUntilNextLockStart(now)
         val budgetToday = c.effectiveDailyBudget(now.dow())
-        val budget = if (budgetToday > 0) maxOf(0, budgetToday - state.usageMinutes(now.toLocalDate())) else -1
+        val budget = if (budgetToday > 0) maxOf(0, budgetToday - state.budgetMinutesUsed(now.toLocalDate())) else -1
         when {
             sched < 0 -> budget
             budget < 0 -> sched
@@ -330,7 +349,8 @@ class Enforcer(
             .put("trustedTimeAgeSeconds", 0)
             .put("lockReason", d.reason)
             .put("pinFailuresToday", state.pinFailures(now.toLocalDate()))
-            .put("usageMinutesToday", state.usageMinutes(now.toLocalDate()))
+            .put("usageMinutesToday", state.usageMinutes(now.toLocalDate()))   // NUR dieses Gerät – der Server addiert
+            .put("otherDevicesMinutesToday", state.otherDevicesMinutes(now.toLocalDate()))
             .put("dailyBudgetMinutes", config?.effectiveDailyBudget(now.dow()) ?: 0)
             .put("usageDay", now.toLocalDate().toString())
             .put("usageSegments", segs)

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import android, configbuilder, db
+from . import android, configbuilder, db, shared
 from .config import settings
 from .security import pin_hash, verify_password
 from .signing import CMD, sign_command
@@ -219,8 +219,13 @@ def dashboard(request: Request):
     codes = db.query("SELECT * FROM pairing_codes WHERE used_device_id IS NULL AND expires_at > ? ORDER BY created_at DESC",
                      (int(time.time()),))
     now = int(time.time())
+    nb = _berlin_now()
+    shared_by_dev = {}
+    for d in devices:
+        if d["child"]:
+            shared_by_dev[d["id"]] = shared.summary(d["child"], nb.strftime("%Y-%m-%d"), nb.weekday())
     return templates.TemplateResponse("dashboard.html", {
-        "request": request, "devices": devices, "codes": codes, "now": now,
+        "request": request, "devices": devices, "codes": codes, "now": now, "shared_by_dev": shared_by_dev,
         "penalties": penalties, "timeout_minutes": TIMEOUT_MINUTES, "lock_states": lock_states,
         "flash": request.query_params.get("ok", ""),
     })
@@ -312,7 +317,14 @@ def device_detail(request: Request, device_id: str):
     known_pkgs = {p for _, pkgs in configbuilder.KNOWN_MESSENGERS for p in pkgs}
     allowed_now = [n for n, pkgs in configbuilder.KNOWN_MESSENGERS if any(p in allowed for p in pkgs)] + \
         [p for p in allowed if p not in known_pkgs]
+    child = dev["child"] or ""
+    child_summary = shared.summary(child, today_key, today.weekday()) if child else None
+    if child_summary:
+        # Limit-Felder zeigen das gemeinsame Limit des Kindes.
+        cwb = ((child_summary["by_weekday"] or []) + [0] * 7)[:7]
+        weekday_budgets = [{"idx": d, "label": lbl, "value": cwb[d]} for d, lbl in DAYS]
     return templates.TemplateResponse("device.html", {
+        "child": child, "child_summary": child_summary, "children": shared.all_children(),
         "is_android": is_android,
         "lock_state": _lock_state(dev, int(time.time())),
         "allowed_now": allowed_now,
@@ -410,8 +422,23 @@ async def set_settings(request: Request, device_id: str):
         "dailyBudgetByWeekday": weekday,
     })
     configbuilder.save_draft(device_id, draft)
-    db.audit(request.session["admin_user"], "settings", device_id, "")
+    child = shared.child_of(device_id)
+    if child:
+        # Gemeinsames Tageskonto: Limit gilt für ALLE Geräte des Kindes.
+        shared.set_child_budget(child, _int("daily_budget", 0), weekday)
+        shared.bump_child(child)
+    db.audit(request.session["admin_user"], "settings", device_id, f"Konto {child}" if child else "")
     return RedirectResponse(f"/admin/devices/{device_id}", status_code=303)
+
+
+@router.post("/admin/devices/{device_id}/child")
+def set_child(request: Request, device_id: str, child: str = Form("")):
+    """Gerät einem Kind zuordnen – alle Geräte eines Kindes teilen sich ein Tageslimit."""
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    name = shared.assign(device_id, child)
+    db.audit(request.session["admin_user"], "child", device_id, name or "(keinem Kind)")
+    return RedirectResponse(f"/admin/devices/{device_id}?ok={'konto' if name else 'kontoweg'}#konto", status_code=303)
 
 
 @router.post("/admin/devices/{device_id}/command")

@@ -110,6 +110,14 @@ object Sync {
                 try { api.ack(cmd.commandId) } catch (_: Exception) { }
                 continue
             }
+            if (cmd.type == CommandType.SHARED_USAGE) {
+                // Gemeinsames Tageskonto: still übernehmen, kein Ack (kommt bei jedem Abruf frisch).
+                val p = cmd.payload ?: continue
+                val mins = p.optString("minutes", "").toIntOrNull() ?: continue
+                if (Guard.enforcer.setSharedUsage(p.optString("day", ""), mins, p.optString("detail", ""), cmd.issuedAtUnix))
+                    GuardService.poke(ctx)
+                continue
+            }
             execute(ctx, api, cmd)
             try { api.ack(cmd.commandId) } catch (_: Exception) { }
         }

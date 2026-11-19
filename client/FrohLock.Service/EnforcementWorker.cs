@@ -335,6 +335,7 @@ public sealed class EnforcementWorker : BackgroundService
                 { _audit.Write("CMD", $"{cmd.Type} abgelaufen – verworfen"); continue; }
 
                 await ExecuteCommandAsync(cmd, ctx, client, haveVersion, ct).ConfigureAwait(false);
+                if (cmd.Type == CommandType.SharedUsage) continue; // kommt bei jedem Abruf frisch, kein Ack
                 try { await client.AckCommandAsync(cmd.CommandId, ct).ConfigureAwait(false); } catch { }
             }
         }
@@ -362,6 +363,7 @@ public sealed class EnforcementWorker : BackgroundService
                 if (cmd.Type == CommandType.Update) continue; // Updates macht der langsame Poll
                 if (cmd.ExpiresAtUnix > 0 && cmd.ExpiresAtUnix < DateTimeOffset.UtcNow.ToUnixTimeSeconds()) continue;
                 await ExecuteCommandAsync(cmd, ctx, client, ctx.ConfigVersion, ct).ConfigureAwait(false);
+                if (cmd.Type == CommandType.SharedUsage) continue; // kommt bei jedem Abruf frisch, kein Ack
                 try { await client.AckCommandAsync(cmd.CommandId, ct).ConfigureAwait(false); } catch { }
             }
             if (client.LastServerDateUtc is { } d) _time.AcceptNetworkTime(d.UtcDateTime);
@@ -377,6 +379,19 @@ public sealed class EnforcementWorker : BackgroundService
             && !_controller.MarkCommandExecuted(cmd.CommandId))
         {
             _audit.Write("CMD", $"{cmd.Type} ({cmd.CommandId}) schon ausgeführt – übersprungen");
+            return;
+        }
+        // Gemeinsames Tageskonto: still übernehmen (kommt alle paar Sekunden – kein Protokoll-Rauschen).
+        if (cmd.Type == CommandType.SharedUsage)
+        {
+            var p = cmd.Payload;
+            if (p is not null && cmd.DeviceId == ctx.DeviceId
+                && p.TryGetValue("day", out var day) && p.TryGetValue("minutes", out var minStr)
+                && int.TryParse(minStr, out var mins))
+            {
+                p.TryGetValue("detail", out var detail);
+                _controller.SetSharedUsage(day, mins, detail ?? "", cmd.IssuedAtUnix);
+            }
             return;
         }
         _audit.Write("CMD", $"Ausführen: {cmd.Type} ({cmd.CommandId})");

@@ -566,3 +566,86 @@ def test_silent_normal_device_waits_three_hours(client, monkeypatch):
     now = int(_time.time())
     assert alerts.check_silence(now + 3600) == 0
     assert alerts.check_silence(now + 3 * 3600 + 60) == 1
+
+
+def _pair(client, name):
+    import app.db as dbmod
+    client.post("/admin/pairing", data={"device_name": name}, follow_redirects=False)
+    code = dbmod.query_one("SELECT code FROM pairing_codes WHERE device_name=? AND used_device_id IS NULL", (name,))["code"]
+    dev = client.post("/devices/register", json={"pairingCode": code, "deviceName": name}).json()
+    auth = {"Authorization": f"Bearer {dev['token']}"}
+    client.post(f"/devices/{dev['deviceId']}/config-draft",
+                json={"windows": [], "pinHash": "eA==", "pinSalt": "eA==", "dailyBudgetMinutes": 60,
+                      "dailyBudgetByWeekday": [60] * 7}, headers=auth)
+    return dev["deviceId"], auth
+
+
+def _shared_cmds(client, pub, device_id, auth):
+    import json
+    out = []
+    for env in client.get(f"/devices/{device_id}/commands", headers=auth).json():
+        c = json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+        if c["type"] == 9:
+            out.append(c)
+    return out
+
+
+def test_shared_daily_account_across_devices(client):
+    """Daniel 19.11.2026: Renat hat 2 Std am Tag – egal ob Laptop oder Handy."""
+    import json
+    with open(PUB_PATH, "rb") as fh:
+        pub = load_pem_public_key(fh.read())
+    _admin_login(client)
+    laptop, la = _pair(client, "Laptop renat")
+    handy, ha = _pair(client, "renat handy")
+
+    # Beide Geräte demselben Kind zuordnen (Schreibweise wird vereinheitlicht).
+    r = client.post(f"/admin/devices/{laptop}/child", data={"child": "Renat"}, follow_redirects=False)
+    assert r.status_code == 303 and "ok=konto" in r.headers["location"]
+    client.post(f"/admin/devices/{handy}/child", data={"child": " renat "}, follow_redirects=False)
+    import app.db as dbmod
+    assert dbmod.query_one("SELECT child FROM devices WHERE id=?", (handy,))["child"] == "Renat"
+
+    # Gemeinsames Limit 120, ohne Wochentag-Werte -> gilt für beide Geräte (neue Config-Version).
+    v_before = configbuilder_version(handy)
+    client.post(f"/admin/devices/{laptop}/settings",
+                data={"daily_budget": "120", "unlock_grace": "60", "max_stale": "720"}, follow_redirects=False)
+    assert configbuilder_version(handy) > v_before
+    for did, auth in ((laptop, la), (handy, ha)):
+        env = client.get(f"/devices/{did}/config?have=0", headers=auth).json()
+        cfg = json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+        assert cfg["dailyBudgetMinutes"] == 120 and cfg["dailyBudgetByWeekday"] == []
+
+    # Laptop meldet 45 Min, Handy 30 Min.
+    day = "2026-11-19"
+    for did, auth, mins, ver in ((laptop, la, 45, "0.29.0.0"), (handy, ha, 30, "1.0.8")):
+        hb = {"deviceId": did, "appVersion": ver, "configVersion": 3, "usageMinutesToday": mins,
+              "dailyBudgetMinutes": 120, "usageDay": day}
+        if did == handy:
+            hb["platform"] = "android"
+        assert client.post(f"/devices/{did}/heartbeat", json=hb, headers=auth).status_code == 200
+
+    # Jedes Gerät bekommt signiert die Minuten der ANDEREN.
+    lc = _shared_cmds(client, pub, laptop, la)
+    hc = _shared_cmds(client, pub, handy, ha)
+    assert len(lc) == 1 and lc[0]["payload"]["minutes"] == "30" and lc[0]["payload"]["day"] == day
+    assert "renat handy" in lc[0]["payload"]["detail"] and lc[0]["deviceId"] == laptop
+    assert len(hc) == 1 and hc[0]["payload"]["minutes"] == "45"
+
+    # Alte Version bekommt den Befehl nicht (würde ihn nicht kennen).
+    client.post(f"/devices/{laptop}/heartbeat", headers=la,
+                json={"deviceId": laptop, "appVersion": "0.28.0.0", "usageMinutesToday": 46, "usageDay": day})
+    assert _shared_cmds(client, pub, laptop, la) == []
+    assert _shared_cmds(client, pub, handy, ha)[0]["payload"]["minutes"] == "46"
+
+    # Admin zeigt die Summe.
+    page = client.get(f"/admin/devices/{handy}").text
+    assert "Gemeinsames Tageskonto" in page and "Laptop renat: 46 Min" in page
+    assert "Renat zusammen" in client.get("/admin").text
+
+    # Herauslösen: Gerät zählt wieder für sich, keine Fremd-Minuten mehr.
+    client.post(f"/admin/devices/{handy}/child", data={"child": ""}, follow_redirects=False)
+    assert _shared_cmds(client, pub, handy, ha) == []
+    env = client.get(f"/devices/{handy}/config?have=0", headers=ha).json()
+    cfg = json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+    assert cfg["dailyBudgetMinutes"] == 60   # wieder das eigene Limit

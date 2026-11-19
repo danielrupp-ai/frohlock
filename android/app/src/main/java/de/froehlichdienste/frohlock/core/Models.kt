@@ -113,11 +113,13 @@ object CommandType {
     const val PING = 6
     const val TIMEOUT = 7
     const val CLEAR_TIMEOUT = 8
+    /** Gemeinsames Tageskonto: Minuten der anderen Geräte des Kindes (payload day/minutes/detail). */
+    const val SHARED_USAGE = 9
 
     fun name(t: Int) = when (t) {
         UNLOCK -> "Unlock"; LOCK -> "Lock"; UPDATE_CONFIG -> "UpdateConfig"; RESET_PIN -> "ResetPin"
         UNINSTALL -> "Uninstall"; UPDATE -> "Update"; PING -> "Ping"; TIMEOUT -> "Timeout"
-        CLEAR_TIMEOUT -> "ClearTimeout"; else -> "Typ$t"
+        CLEAR_TIMEOUT -> "ClearTimeout"; SHARED_USAGE -> "SharedUsage"; else -> "Typ$t"
     }
 }
 
@@ -128,6 +130,7 @@ data class DeviceCommand(
     val issuedAtUnix: Long,
     val expiresAtUnix: Long,
     val unlockMinutes: Int?,
+    val payload: JSONObject? = null,
 ) {
     companion object {
         fun fromJson(o: JSONObject): DeviceCommand {
@@ -137,7 +140,7 @@ data class DeviceCommand(
                 is Number -> rawType.toInt()
                 is String -> rawType.toIntOrNull() ?: when (rawType.lowercase()) {
                     "unlock" -> 0; "lock" -> 1; "updateconfig" -> 2; "resetpin" -> 3; "uninstall" -> 4
-                    "update" -> 5; "ping" -> 6; "timeout" -> 7; "cleartimeout" -> 8; else -> -1
+                    "update" -> 5; "ping" -> 6; "timeout" -> 7; "cleartimeout" -> 8; "sharedusage" -> 9; else -> -1
                 }
                 else -> -1
             }
@@ -148,6 +151,7 @@ data class DeviceCommand(
                 issuedAtUnix = o.optLong("issuedAtUnix", 0),
                 expiresAtUnix = o.optLong("expiresAtUnix", 0),
                 unlockMinutes = if (o.has("unlockMinutes") && !o.isNull("unlockMinutes")) o.optInt("unlockMinutes") else null,
+                payload = o.optJSONObject("payload"),
             )
         }
     }

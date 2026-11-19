@@ -116,6 +116,34 @@
 </div>
 {% endif %}
 
+<div class="card" id="konto">
+  <h2>👧👦 Gemeinsames Tageskonto</h2>
+  {% if child_summary %}
+  {% set cs = child_summary %}
+  <p style="margin:0 0 8px;font-size:17px">
+    <b>{{ cs.name }}</b> heute: <b>{{ cs.used }} Min</b>{% if cs.budget > 0 %} von <b>{{ cs.budget }} Min</b>
+    {% if cs.over %}<span class="badge locked">aufgebraucht</span>{% else %}– noch {{ cs.left }} Min übrig{% endif %}{% else %} (kein Limit gesetzt){% endif %}
+  </p>
+  <p class="muted" style="margin:0 0 10px">
+    {% for u in cs.devices %}{% if u.platform == "android" %}📱{% else %}💻{% endif %} {{ u.name }}: {{ u.minutes }} Min{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+  <p class="muted" style="margin:0 0 10px">Die Zeit ist geräteunabhängig: {{ cs.name }} kann sie am Laptop, am Handy oder gemischt nutzen. Ist sie aufgebraucht, sperren alle Geräte. Das Limit stellst du unten bei „Einstellungen“ ein – es gilt für alle Geräte von {{ cs.name }}.</p>
+  {% else %}
+  <p class="muted" style="margin:0 0 10px">Gehört dieses Gerät zu einem Kind, das noch weitere Geräte hat (z. B. Laptop + Handy)? Dann trag hier denselben Namen ein – die Geräte teilen sich danach EIN Tageslimit, egal auf welchem Gerät die Zeit genutzt wird.</p>
+  {% endif %}
+  <form class="row" method="post" action="/admin/devices/{{ dev['id'] }}/child">
+    <label class="muted">Gehört zu (Name des Kindes)
+      <input name="child" list="children-list" value="{{ child }}" placeholder="z. B. Renat" maxlength="40" style="width:160px"></label>
+    <datalist id="children-list">{% for c in children %}<option value="{{ c }}">{% endfor %}</datalist>
+    <button type="submit">Speichern</button>
+  </form>
+  <p class="muted" style="margin:6px 0 0">Feld leeren und speichern = Gerät zählt wieder nur für sich. Gleichzeitig genutzte Geräte zählen beide (1 Min Handy + 1 Min Laptop = 2 Min).</p>
+  {% if child and dev["app_version"] %}
+  {% set need = "1.0.8" if is_android else "0.29.0" %}
+  <p class="muted" style="margin:6px 0 0">Braucht FrohLock {{ need }} oder neuer auf dem Gerät (jetzt: {{ dev["app_version"] }}). Ältere Versionen sperren nur nach ihrer eigenen Zeit.</p>
+  {% endif %}
+</div>
+
 <div class="card" id="zeit">
   <h2>Bildschirmzeit</h2>
   {% if "screen_active" in dev.keys() and dev["screen_active"] == 0 %}
@@ -248,8 +276,8 @@
     <h2 style="margin-top:18px">Einstellungen</h2>
     <form method="post" action="/admin/devices/{{ dev['id'] }}/settings">
       <div class="row">
-        <label class="muted">Tageslimit gesamt (min, 0 = aus)
-          <input name="daily_budget" type="number" min="0" value="{{ draft.get('dailyBudgetMinutes', 0) }}" style="width:90px"></label>
+        <label class="muted">{% if child_summary %}Tageslimit für {{ child_summary.name }} – alle Geräte zusammen (min, 0 = aus){% else %}Tageslimit gesamt (min, 0 = aus){% endif %}
+          <input name="daily_budget" type="number" min="0" value="{{ child_summary.daily if child_summary else draft.get('dailyBudgetMinutes', 0) }}" style="width:90px"></label>
         <label class="muted">Entsperrdauer (min)
           <input name="unlock_grace" type="number" value="{{ draft.get('unlockGraceMinutes', 60) }}" style="width:80px"></label>
         <label class="muted">Max. Zeit-Alter (min)
