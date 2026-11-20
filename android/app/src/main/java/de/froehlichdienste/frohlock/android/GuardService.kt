@@ -388,11 +388,18 @@ class GuardService : Service() {
 
     private fun startInForeground() {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CH_GUARD, "Schutz", NotificationManager.IMPORTANCE_MIN).apply {
+        // Eigener Kanal „Bildschirmzeit“ (sichtbar in der Statusleiste + Sperrbildschirm). Der alte Kanal „guard“
+        // war IMPORTANCE_MIN (versteckt) – die Wichtigkeit eines Kanals lässt sich nachträglich nicht ändern.
+        nm.createNotificationChannel(NotificationChannel(CH_USAGE, "Bildschirmzeit heute", NotificationManager.IMPORTANCE_LOW).apply {
             setShowBadge(false)
+            setSound(null, null)
+            enableVibration(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            description = "Zeigt, wie viel Bildschirmzeit heute schon genutzt ist"
         })
+        try { nm.deleteNotificationChannel(CH_GUARD) } catch (_: Exception) { }
         Reminders.ensureChannel(this)
-        val n = notification("FrohLock passt auf")
+        val n = notification("FrohLock passt auf", "", null)
         if (Build.VERSION.SDK_INT >= 34) {
             val type = if (DeviceOwner.isDeviceOwner(this)) ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
                        else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
@@ -402,34 +409,49 @@ class GuardService : Service() {
         } else startForeground(1, n)
     }
 
-    private fun notification(text: String): Notification {
+    /** progress = (genutzt, Limit) oder null; remaining >= 0 → Restminuten als Zahl in der Statusleiste. */
+    private fun notification(title: String, text: String, progress: Pair<Int, Int>?, remaining: Int = -1): Notification {
         val pi = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, CH_GUARD)
-            .setSmallIcon(R.drawable.ic_stat_lock)
-            .setContentTitle("FrohLock")
-            .setContentText(text)
+        val b = Notification.Builder(this, CH_USAGE)
+            .setContentTitle(title)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setCategory(Notification.CATEGORY_STATUS)
             .setContentIntent(pi)
-            .build()
+        if (text.isNotEmpty()) b.setContentText(text)
+        if (progress != null) b.setProgress(progress.second, progress.first.coerceAtMost(progress.second), false)
+        val icon = if (remaining >= 0) UsageIcon.number(remaining) else null
+        if (icon != null) b.setSmallIcon(icon) else b.setSmallIcon(R.drawable.ic_stat_lock)
+        if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        return b.build()
     }
 
     private fun updateNotification(locked: Boolean, reason: String) {
         val e = Guard.enforcer
-        val text = when {
-            !e.isConfigured -> "Noch nicht eingerichtet"
-            locked -> "Gesperrt"
-            else -> {
-                val b = e.todayBudgetMinutes()
-                if (b > 0) "Heute ${e.todayUsageMinutes()} von $b Min" else "Heute ${e.todayUsageMinutes()} Min"
-            }
+        val budget = e.todayBudgetMinutes()
+        val used = e.todayUsageMinutes()
+        val rem = (budget - used).coerceAtLeast(0)
+        val fmt = de.froehlichdienste.frohlock.core.UsageTimeline::fmtMinutes
+        val key = "$locked|${e.isConfigured}|$budget|$used"
+        if (key == lastNotifText) return
+        lastNotifText = key
+        val n = when {
+            !e.isConfigured -> notification("FrohLock", "Noch nicht eingerichtet", null)
+            budget > 0 -> notification(
+                if (locked) "🔒 Pause – heute ${fmt(used)} von ${fmt(budget)}" else "⏱ Heute ${fmt(used)} von ${fmt(budget)} genutzt",
+                if (rem > 0) "Noch ${fmt(rem)} übrig" + (if (locked) " (gerade Sperrzeit)" else "") else "Für heute ist die Zeit aufgebraucht",
+                used to budget, rem)
+            locked -> notification("🔒 Gerade Pause", "Heute ${fmt(used)} genutzt", null)
+            else -> notification("⏱ Heute ${fmt(used)} genutzt", "", null)
         }
-        if (text == lastNotifText) return
-        lastNotifText = text
-        getSystemService(NotificationManager::class.java).notify(1, notification(text))
+        getSystemService(NotificationManager::class.java).notify(1, n)
     }
 
     companion object {
         const val CH_GUARD = "guard"
+        const val CH_USAGE = "zeit"
         const val ACTION_POKE = "poke"
         const val ACTION_SYNC = "sync"
         @Volatile var instance: GuardService? = null; private set

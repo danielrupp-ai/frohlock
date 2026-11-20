@@ -19,6 +19,7 @@ public partial class StatusWindow : Window
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _timer.Tick += async (_, _) => await Refresh();
         _timer.Start();
+        Closed += (_, _) => _timer.Stop();
     }
 
     private async Task Refresh()

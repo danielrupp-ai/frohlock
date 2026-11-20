@@ -17,6 +17,8 @@ public partial class App : Application
     private readonly IpcClient _ipc = new();
     private KeyboardHook? _hook;
     private LockWindow? _lock;
+    private UsageBadge? _badge;
+    private StatusWindow? _overview;
     private DispatcherTimer? _poll;
     private DispatcherTimer? _alive;
     private readonly ScreenStateMonitor _screen = new();
@@ -174,6 +176,8 @@ public partial class App : Application
             }
             bool locked = status?.Locked ?? (_lock?.IsVisible ?? false);
 
+            UpdateBadge(status, locked);
+
             if (locked)
             {
                 _lock?.SetForgot(status?.ForgotUrl);
@@ -192,6 +196,33 @@ public partial class App : Application
         }
         catch { /* im Zweifel Overlay stehen lassen */ }
         finally { _polling = false; }
+    }
+
+    /// <summary>Zeit-Anzeige unten rechts: sichtbar, solange der Laptop frei ist und ein Tageslimit gilt.</summary>
+    private void UpdateBadge(FrohLock.Core.Ipc.IpcMessage? status, bool locked)
+    {
+        try
+        {
+            bool show = status is { Configured: true, BudgetMinutes: > 0 } && !locked;
+            if (!show) { if (_badge is { IsVisible: true }) _badge.Hide(); return; }
+            _badge ??= new UsageBadge(OpenOverview);
+            _badge.Update(status!.UsageMinutes, status.BudgetMinutes);
+            if (!_badge.IsVisible) _badge.Show();
+        }
+        catch { }
+    }
+
+    private void OpenOverview()
+    {
+        try
+        {
+            if (_overview is { IsLoaded: true }) { _overview.Activate(); return; }
+            _overview = new StatusWindow(_ipc);
+            _overview.Closed += (_, _) => _overview = null;
+            _overview.Show();
+            _overview.Activate();
+        }
+        catch { }
     }
 
     private void MaybeShowReminder(int minutesUntilLock)
