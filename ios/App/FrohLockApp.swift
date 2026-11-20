@@ -252,7 +252,7 @@ struct PairView: View {
         Form {
             Section {
                 Header(step: "Schritt 1 von 4", title: "FrohLock einrichten 💛",
-                       text: "Im Admin (frohlock.froehlichdienste.de/admin) „iPhone hinzufügen“ wählen. Den 6-stelligen Code hier eintragen – oder den Link am iPhone öffnen, dann ist er schon drin.")
+                       text: "Im Admin (frohlock.froehlichdienste.de/admin) „iPhone einrichten“ wählen. Den 6-stelligen Code hier eintragen – oder den Link am iPhone öffnen, dann ist er schon drin.")
             }
             Section("Kopplungscode") {
                 TextField("123456", text: $code).keyboardType(.numberPad).font(.title2.monospacedDigit())

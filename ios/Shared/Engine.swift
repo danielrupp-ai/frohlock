@@ -16,7 +16,13 @@ extension ManagedSettingsStore.Name { static let frohlock = Self("frohlock") }
 /// Läuft in der App UND im Bildschirmzeit-Monitor (Erweiterung) – iOS hat keinen Dauer-Hintergrunddienst.
 enum Engine {
     static let usageStep = 5
-    static let usageMax = 600
+
+    /// Bis wohin gezählt wird: etwas über dem größten Tageslimit (ohne Limit 4 Std für die Anzeige), höchstens 10 Std.
+    static func usageMax(_ c: LockConfig?) -> Int {
+        let top = max(c?.dailyBudgetMinutes ?? 0, (c?.dailyBudgetByWeekday ?? []).max() ?? 0)
+        let m = top > 0 ? top + 60 : 240
+        return min(600, (m + usageStep - 1) / usageStep * usageStep)
+    }
 
     // ---------- Sperren ----------
 
@@ -72,7 +78,7 @@ enum Engine {
             let counted = Store.countedSelection
             var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
             if !counted.applicationTokens.isEmpty || !counted.categoryTokens.isEmpty || !counted.webDomainTokens.isEmpty {
-                for m in stride(from: usageStep, through: usageMax, by: usageStep) {
+                for m in stride(from: usageStep, through: usageMax(e.config), by: usageStep) {
                     events[.init("u\(m)")] = DeviceActivityEvent(
                         applications: counted.applicationTokens, categories: counted.categoryTokens,
                         webDomains: counted.webDomainTokens, threshold: DateComponents(minute: m))
@@ -115,7 +121,7 @@ enum Engine {
     /// Ändert sich die Zählauswahl, muss der Tageszähler neu gestartet werden.
     private static func usageKey() -> String {
         let c = Store.countedSelection
-        return "\(c.applicationTokens.count)-\(c.categoryTokens.count)-\(c.webDomainTokens.count)-\(usageStep)"
+        return "\(c.applicationTokens.count)-\(c.categoryTokens.count)-\(c.webDomainTokens.count)-\(usageStep)-\(usageMax(Store.config()))"
     }
 
     // ---------- Server ----------
