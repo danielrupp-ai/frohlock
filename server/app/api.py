@@ -57,7 +57,7 @@ def register(req: RegisterRequest):
     platform = (req.platform or (row["platform"] if "platform" in keys else "") or "windows").lower()
     name = req.deviceName or row["device_name"]
     # Name aus dem Admin hat Vorrang vor dem Gerätenamen („Handy Danyil" statt „SM-A156B").
-    if platform == "android" and row["device_name"]:
+    if platform in ("android", "ios") and row["device_name"]:
         name = row["device_name"]
     with db.tx() as c:
         c.execute(
@@ -228,7 +228,7 @@ def get_commands(device_id: str, request: Request):
     dev_row = db.query_one("SELECT app_version, platform FROM devices WHERE id=?", (device_id,))
     platform = ((dev_row["platform"] if dev_row else "") or "windows").lower()
     # Android kennt die Auszeit von Anfang an; Windows erst ab 0.20.0.
-    knows_timeout = platform == "android" or \
+    knows_timeout = platform in ("android", "ios") or \
         not _version_older((dev_row["app_version"] if dev_row else "") or "0", "0.20.0")
     out = []
     for r in rows:
@@ -236,15 +236,15 @@ def get_commands(device_id: str, request: Request):
         if r["type"] in (7, 8) and not knows_timeout:
             continue
         # Nachricht ans Kind: nur Android ab 1.0.9 kann sie zeigen – bis dahin bleibt sie in der Warteschlange.
-        if r["type"] == 10 and not (platform == "android" and
-                                    not _version_older((dev_row["app_version"] if dev_row else "") or "0", MESSAGE_MIN_ANDROID)):
+        if r["type"] == 10 and not (platform == "ios" or (platform == "android" and
+                                    not _version_older((dev_row["app_version"] if dev_row else "") or "0", MESSAGE_MIN_ANDROID))):
             continue
         out.append(payload["envelope"])
 
     # Gemeinsames Tageskonto: was die anderen Geräte des Kindes heute schon verbraucht haben (signiert,
     # bei jedem Abruf frisch, nicht gespeichert, braucht kein Ack). Nur an Geräte, die den Befehl kennen.
     try:
-        min_ver = shared.MIN_ANDROID if platform == "android" else shared.MIN_WINDOWS
+        min_ver = {"android": shared.MIN_ANDROID, "ios": shared.MIN_IOS}.get(platform, shared.MIN_WINDOWS)
         if dev_row and not _version_older(dev_row["app_version"] or "0", min_ver):
             o = shared.others_today(device_id)
             if o:
@@ -258,8 +258,11 @@ def get_commands(device_id: str, request: Request):
     # Selbst-nachlieferndes Update: solange das Gerät eine ÄLTERE Version meldet, bei JEDEM
     # Poll erneut ein Update-Kommando anbieten (robust gegen abgebrochene Downloads bei wackligem Netz).
     # Je Plattform eigenes Ziel – ein Android-Gerät (1.x) darf nie das Windows-Update (0.x) bekommen.
+    # iOS installiert nie still (Apple) – die App zeigt selbst „Neue Version installieren“.
     try:
-        if platform == "android":
+        if platform == "ios":
+            target = ""
+        elif platform == "android":
             t = android.update_target()
             target = t[0] if t else ""
         else:
@@ -282,6 +285,11 @@ def ack_command(device_id: str, command_id: str, request: Request):
 
 @router.get("/updates/manifest")
 def update_manifest(channel: str = "stable", platform: str = "windows"):
+    if platform == "ios":
+        from . import ios
+        if not ios.version():
+            raise HTTPException(status_code=404, detail="Kein iOS-Build bereitgestellt")
+        return {"version": ios.version(), "url": ios.public("/ios")}
     if platform == "android":
         t = android.update_target()
         if not t:

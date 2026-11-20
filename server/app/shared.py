@@ -19,6 +19,7 @@ from . import db
 # Ab diesen Versionen kennen die Geräte den Befehl „sharedUsage" (ältere würden ihn protokollieren und ignorieren).
 MIN_WINDOWS = "0.29.0"
 MIN_ANDROID = "1.0.8"
+MIN_IOS = "1.0.0"
 
 
 def norm_name(name: str | None) -> str:

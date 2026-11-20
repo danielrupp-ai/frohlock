@@ -9,7 +9,7 @@
     <tr><th>Name</th><th>Status</th><th>Heute</th><th>Version</th><th>Zuletzt gesehen</th><th></th></tr>
     {% for d in devices %}
     <tr>
-      <td>{% if d["platform"] == "android" %}📱{% else %}💻{% endif %} {{ d["name"] }}
+      <td>{% if d["platform"] == "android" %}📱{% elif d["platform"] == "ios" %}🍎{% else %}💻{% endif %} {{ d["name"] }}
         {% if d["platform"] == "android" and d["device_owner"] == 0 %}<br><span class="muted" style="color:#ffab40">⚠ ohne Geräte-Verwaltung</span>{% endif %}</td>
       <td>
         {% set s = lock_states[d["id"]] %}
@@ -47,6 +47,13 @@
 </div>
 
 <div class="card">
+  <h2>🍎 iPhone hinzufügen</h2>
+  <p class="muted" style="margin:0 0 10px">Ohne App Store, über einen Link am iPhone. Nutzt Apples Bildschirmzeit:
+    Sperrzeiten, gemeinsames Tageskonto, Fern-Sperren und Nachrichten wie beim Android-Handy.</p>
+  <a class="btn" href="/admin/ios/new"><button type="button">iPhone einrichten</button></a>
+</div>
+
+<div class="card">
   <h2>💻 Neues Windows-Gerät koppeln</h2>
   <form class="row" method="post" action="/admin/pairing">
     <input name="device_name" placeholder="z. B. Laptop Kind 1">
@@ -58,7 +65,7 @@
     {% for c in codes %}
     <tr>
       <td><code class="code">{{ c["code"] }}</code></td>
-      <td>{% if c["platform"] == "android" %}📱 <a href="/admin/android/qr/{{ c['code'] }}" style="color:#9ecbff">{{ c["device_name"] }} – QR-Code zeigen</a>{% else %}{{ c["device_name"] }}{% endif %}</td>
+      <td>{% if c["platform"] == "android" %}📱 <a href="/admin/android/qr/{{ c['code'] }}" style="color:#9ecbff">{{ c["device_name"] }} – QR-Code zeigen</a>{% elif c["platform"] == "ios" %}🍎 <a href="/admin/ios/{{ c['code'] }}" style="color:#9ecbff">{{ c["device_name"] }} – Link zeigen</a>{% else %}{{ c["device_name"] }}{% endif %}</td>
       <td class="muted">{{ ((c["expires_at"] - now) // 3600) }} h</td>
     </tr>
     {% endfor %}

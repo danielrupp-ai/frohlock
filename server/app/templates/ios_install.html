@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>FrohLock fürs iPhone</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#F4F7FF;
+      background:linear-gradient(180deg,#0B1A4A,#243B8F 55%,#5B3E9E);min-height:100vh}
+    .wrap{max-width:560px;margin:0 auto;padding:28px 18px 50px}
+    h1{font-size:28px;margin:6px 0 4px}
+    .sub{color:rgba(244,247,255,.82);margin:0 0 22px;line-height:1.5}
+    .step{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.22);border-radius:18px;padding:18px;margin:14px 0}
+    .num{display:inline-block;width:30px;height:30px;border-radius:50%;background:#FFD54F;color:#1A1440;font-weight:800;
+      text-align:center;line-height:30px;margin-right:8px}
+    .step h2{font-size:19px;margin:0 0 8px;display:flex;align-items:center}
+    .step p{margin:6px 0;color:rgba(244,247,255,.86);line-height:1.5;font-size:15px}
+    .btn{display:block;text-align:center;background:#FFD54F;color:#1A1440;text-decoration:none;font-weight:800;font-size:19px;
+      padding:16px;border-radius:14px;margin-top:10px}
+    .btn.sec{background:rgba(255,255,255,.18);color:#fff}
+    .code{font-size:34px;letter-spacing:6px;font-weight:800;text-align:center;background:rgba(0,0,0,.25);border-radius:12px;padding:10px;margin:8px 0}
+    .warn{background:rgba(255,171,64,.15);border:1px solid rgba(255,171,64,.55);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5}
+    small{color:rgba(244,247,255,.6)}
+  </style>
+</head>
+<body><div class="wrap">
+  <div style="font-size:56px">🌙</div>
+  <h1>FrohLock fürs iPhone</h1>
+  {% if state == "update" %}
+    <p class="sub">Neue Version von FrohLock installieren. Diese Seite <b>am iPhone in Safari</b> öffnen.</p>
+    {% if version %}
+    <div class="step">
+      <a class="btn" href="{{ install_url }}">⬇️ FrohLock {{ version }} installieren</a>
+      <p>Nach dem Tippen „Installieren“ bestätigen. Die App wird ersetzt, Einstellungen bleiben.</p>
+      <p>Klappt es nicht („App konnte nicht installiert werden“)? Dann ist dieses iPhone noch nicht freigeschaltet –
+        bitte im Admin einen iPhone-Code erstellen und dem Link folgen.</p>
+    </div>
+    {% else %}<p class="sub">Gerade liegt keine iPhone-App auf dem Server.</p>{% endif %}
+  {% elif state == "ok" %}
+  <p class="sub">Für „{{ name }}“. Diese Seite bitte <b>auf dem Kinder-iPhone in Safari</b> öffnen (nicht in Chrome, nicht in WhatsApp).</p>
+
+  {% if request.query_params.get("fehler") %}
+  <div class="warn" style="margin-bottom:8px">⚠ Die Anmeldung kam nicht richtig an. Bitte Schritt 1 noch einmal machen.</div>
+  {% endif %}
+
+  <div class="step">
+    <h2><span class="num">1</span>iPhone anmelden</h2>
+    {% if not udid %}
+      <a class="btn" href="{{ profile_url }}">📲 iPhone anmelden</a>
+      <p>Safari fragt „Konfigurationsprofil laden?“ → <b>Erlauben</b>.</p>
+      <p>Dann <b>Einstellungen</b> öffnen → ganz oben <b>„Profil geladen“</b> → <b>Installieren</b> → Gerätecode eingeben → <b>Installieren</b>.
+        iOS schickt nur die Gerätenummer an FrohLock und kommt danach von selbst auf diese Seite zurück. Das Profil bleibt nicht auf dem iPhone.</p>
+    {% else %}
+      <p>✅ Dieses iPhone ist angemeldet.</p>
+    {% endif %}
+  </div>
+
+  <div class="step">
+    <h2><span class="num">2</span>App installieren</h2>
+    {% if udid and built and version %}
+      <a class="btn" href="{{ install_url }}">⬇️ FrohLock {{ version }} installieren</a>
+      <p>„Installieren“ bestätigen. Die App erscheint auf dem Home-Bildschirm.</p>
+    {% elif udid %}
+      <p>⏳ <b>FrohLock wird gerade für dieses iPhone gebaut.</b> Apple verlangt, dass jedes iPhone einzeln eingetragen wird –
+        das macht Daniel, ihr müsst nichts tun. Diese Seite aktualisiert sich von selbst; ihr könnt sie auch später wieder öffnen.</p>
+      <script>setTimeout(function(){location.reload()},60000)</script>
+    {% else %}
+      <p>Kommt nach Schritt 1.</p>
+    {% endif %}
+  </div>
+
+  <div class="step">
+    <h2><span class="num">3</span>Entwicklermodus einschalten</h2>
+    <p>Beim ersten Öffnen sagt iOS „Entwicklermodus erforderlich“. Dann: <b>Einstellungen → Datenschutz &amp; Sicherheit</b> →
+      ganz unten <b>Entwicklermodus</b> → einschalten → <b>Neustart</b>. Nach dem Neustart „Einschalten“ bestätigen und den Gerätecode eingeben.</p>
+    <p><small>Das ist nötig, weil FrohLock nicht aus dem App Store kommt. Es ändert sonst nichts am iPhone.</small></p>
+  </div>
+
+  <div class="step">
+    <h2><span class="num">4</span>Koppeln</h2>
+    <a class="btn" href="{{ pair_link }}">🔗 FrohLock öffnen und koppeln</a>
+    <p>Falls der Knopf nichts tut: FrohLock öffnen und diesen Code eingeben:</p>
+    <div class="code">{{ code[:3] }} {{ code[3:] }}</div>
+  </div>
+
+  <div class="step">
+    <h2><span class="num">5</span>In der App fertig einrichten</h2>
+    <p>FrohLock fragt nach der <b>Bildschirmzeit-Erlaubnis</b> (Face ID oder Gerätecode – macht ein Elternteil), dann:
+      welche Apps zählen (<b>alle</b> wählen) und welche immer gehen (<b>FrohLock, Telefon, Nachrichten</b>).
+      Danach die Eltern-PIN, falls sie nicht schon übernommen wurde.</p>
+  </div>
+
+  <div class="warn">
+    <b>Gut zu wissen:</b> Unter <b>Einstellungen → Bildschirmzeit</b> einen eigenen Bildschirmzeit-Code setzen, den nur ihr kennt –
+    dann kann das Kind die Erlaubnis nicht einfach entziehen. Wird sie trotzdem entzogen, zeigt der Admin eine Warnung.
+  </div>
+  {% elif state == "used" %}
+  <p class="sub">Dieser Code wurde schon benutzt – das iPhone ist bereits gekoppelt. Für ein Update: <a href="/ios" style="color:#FFD54F">frohlock.froehlichdienste.de/ios</a>.</p>
+  {% elif state == "expired" %}
+  <p class="sub">Dieser Code ist abgelaufen. Bitte im Admin unter „iPhone einrichten“ einen neuen erstellen.</p>
+  {% else %}
+  <p class="sub">Diesen Code gibt es nicht. Bitte den Link aus dem FrohLock-Admin verwenden.</p>
+  {% endif %}
+  <p style="text-align:center;margin-top:28px"><small>FrohLock · Fröhlich Dienste</small></p>
+</div></body>
+</html>

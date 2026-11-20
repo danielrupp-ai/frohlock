@@ -1,0 +1,6 @@
+build/
+.build/
+FrohLock.xcodeproj/
+*.ipa
+*.mobileprovision
+*.p8

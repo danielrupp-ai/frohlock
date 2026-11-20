@@ -616,8 +616,10 @@ def test_shared_daily_account_across_devices(client):
         cfg = json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
         assert cfg["dailyBudgetMinutes"] == 120 and cfg["dailyBudgetByWeekday"] == []
 
-    # Laptop meldet 45 Min, Handy 30 Min.
-    day = "2026-11-19"
+    # Laptop meldet 45 Min, Handy 30 Min (heute in Berlin – der Admin zeigt den heutigen Tag).
+    import datetime
+    from zoneinfo import ZoneInfo
+    day = datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d")
     for did, auth, mins, ver in ((laptop, la, 45, "0.29.0.0"), (handy, ha, 30, "1.0.8")):
         hb = {"deviceId": did, "appVersion": ver, "configVersion": 3, "usageMinutesToday": mins,
               "dailyBudgetMinutes": 120, "usageDay": day}
@@ -684,3 +686,68 @@ def test_media_route_only_safe_names(client):
     assert client.get("/media/..%2Fapp.db").status_code == 404
     assert client.get("/media/short.mp4").status_code == 404
     assert client.get("/media/abcdefghijklmnopqrstuvwx.mp4").status_code == 404
+
+
+def test_iphone_enroll_install_and_pair(client, monkeypatch, tmp_path):
+    """iPhone ohne App Store: Link → Profil → UDID → (Build) → Installieren → Koppeln."""
+    import app.db as dbmod
+    from app.config import settings
+    monkeypatch.setattr(settings, "download_dir", str(tmp_path))
+    _admin_login(client)
+    r = client.post("/admin/ios/new", data={"device_name": "iPhone Renat"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/admin/ios/")
+    code = r.headers["location"].rsplit("/", 1)[1]
+    assert "iPhone Renat" in client.get(f"/admin/ios/{code}").text
+    assert "Link zeigen" in client.get("/admin").text
+
+    page = client.get(f"/ios/{code}").text
+    assert "iPhone anmelden" in page and f"/ios/{code}/anmelden.mobileconfig" in page
+    prof = client.get(f"/ios/{code}/anmelden.mobileconfig")
+    assert prof.headers["content-type"].startswith("application/x-apple-aspen-config")
+    assert b"Profile Service" in prof.content and f"/ios/{code}/udid".encode() in prof.content
+    assert client.get("/ios/999999/anmelden.mobileconfig").status_code == 404
+
+    # iOS schickt PKCS#7 mit Plist darin
+    udid = "00008110-001A2B3C4D5E801E"
+    body = (b"\x30\x82junk<?xml version=\"1.0\"?><plist><dict><key>PRODUCT</key><string>iPhone14,7</string>"
+            b"<key>UDID</key><string>" + udid.encode() + b"</string><key>VERSION</key><string>22A3354</string></dict></plist>junk")
+    r = client.post(f"/ios/{code}/udid", content=body, follow_redirects=False)
+    assert r.status_code == 301 and f"u={udid}" in r.headers["location"]
+    row = dbmod.query_one("SELECT * FROM ios_enrollments WHERE udid=?", (udid,))
+    assert row["product"] == "iPhone14,7" and row["code"] == code
+    page = client.get(f"/ios/{code}?u={udid}").text
+    assert "wird gerade für dieses iPhone gebaut" in page
+    assert "wartet auf neuen Build" in client.get(f"/admin/ios/{code}").text
+
+    # Build mit dieser UDID liegt bereit
+    (tmp_path / "ios").mkdir()
+    (tmp_path / "ios" / "FrohLock.ipa").write_bytes(b"PK")
+    (tmp_path / "ios" / "version.txt").write_text("1.0.0")
+    (tmp_path / "ios" / "udids.txt").write_text(udid.lower() + "\n")
+    page = client.get(f"/ios/{code}?u={udid}").text   # (in echt per Cookie, nur über HTTPS)
+    assert "itms-services://?action=download-manifest" in page and "FrohLock 1.0.0 installieren" in page
+    man = client.get("/ios/manifest.plist").text
+    assert "de.froehlichdienste.frohlock" in man and "/ios/FrohLock.ipa" in man
+    assert client.get("/ios/FrohLock.ipa").content == b"PK"
+    assert client.get("/updates/manifest?platform=ios").json()["version"] == "1.0.0"
+
+    # Koppeln: Name aus dem Admin, Plattform ios, keine Update-Befehle, Nachrichten erlaubt
+    dev = client.post("/devices/register", json={"pairingCode": code, "deviceName": "iPhone", "platform": "ios"}).json()
+    did, auth = dev["deviceId"], {"Authorization": f"Bearer {dev['token']}"}
+    d = dbmod.query_one("SELECT name, platform FROM devices WHERE id=?", (did,))
+    assert d["name"] == "iPhone Renat" and d["platform"] == "ios"
+    client.post(f"/devices/{did}/heartbeat", headers=auth, json={
+        "deviceId": did, "appVersion": "0.0.1", "platform": "ios",
+        "deviceInfo": {"model": "iPhone14,7", "screenTimeAuthorized": True, "countedCategories": 12}})
+    monkeypatch.setattr(settings, "update_version", "9.9.9")
+    monkeypatch.setattr(settings, "update_url", "https://x/y.exe")
+    monkeypatch.setattr(settings, "update_sha256", "ab" * 32)
+    assert client.get(f"/devices/{did}/commands", headers=auth).json() == []
+    client.post(f"/devices/{did}/message", headers=auth)  # (kein Geräte-Endpunkt – ignoriert)
+    r = client.post(f"/admin/devices/{did}/message", data={"title": "Hi", "text": "Hallo", "button": "OK"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert len(client.get(f"/devices/{did}/commands", headers=auth).json()) == 1
+    page = client.get(f"/admin/devices/{did}").text
+    assert "Bildschirmzeit-Erlaubnis" in page and "12 Kategorien" in page and "Nachricht ans Kind" in page
+    assert "gekoppelt" in client.get(f"/ios/{code}").text

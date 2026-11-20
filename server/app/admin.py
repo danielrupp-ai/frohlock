@@ -65,7 +65,9 @@ def _lock_state(dev, now: int) -> dict:
     erlaubten App (Telegram/Signal) oder fehlt der Sperrbildschirm, ist das Handy trotzdem in Benutzung –
     das steht dann dabei (07.11.2026: Renat nutzte Telegram, das Web zeigte nur „gesperrt")."""
     keys = dev.keys()
-    if not dev["last_seen"] or now - dev["last_seen"] > 300:
+    # iPhones melden sich nur alle ~15 Min (Apple weckt FrohLock nicht öfter) – nicht vorschnell „offline“.
+    limit = 2400 if ("platform" in keys and (dev["platform"] or "") == "ios") else 300
+    if not dev["last_seen"] or now - dev["last_seen"] > limit:
         return {"kind": "off", "label": "offline", "hint": ""}
     if not dev["locked"]:
         return {"kind": "open", "label": "frei", "hint": ""}
@@ -320,6 +322,15 @@ def device_detail(request: Request, device_id: str):
     gap_alerts = _gap_alerts(dev)
     keys = dev.keys()
     is_android = ("platform" in keys and (dev["platform"] or "") == "android")
+    is_ios = ("platform" in keys and (dev["platform"] or "") == "ios")
+    ios_info = {}
+    if is_ios:
+        try:
+            ios_info = json.loads(dev["device_info"] or "{}") or {}
+        except Exception:
+            ios_info = {}
+        from . import ios as ios_mod
+        ios_info["latest"] = ios_mod.version()
     others = [d for d in db.query("SELECT id, name, platform FROM devices WHERE id<>? ORDER BY name", (device_id,))]
 
     allowed = draft.get("alwaysAllowedApps", configbuilder.DEFAULT_ALLOWED_APPS)
@@ -349,7 +360,7 @@ def device_detail(request: Request, device_id: str):
     return templates.TemplateResponse("device.html", {
         "messages": pending_msgs,
         "child": child, "child_summary": child_summary, "children": shared.all_children(),
-        "is_android": is_android,
+        "is_android": is_android, "is_ios": is_ios, "ios_info": ios_info,
         "lock_state": _lock_state(dev, int(time.time())),
         "allowed_now": allowed_now,
         "messengers": [{"name": n, "key": pkgs[0], "on": any(p in allowed for p in pkgs)} for n, pkgs in configbuilder.KNOWN_MESSENGERS],
@@ -641,3 +652,48 @@ async def set_allowed_apps(request: Request, device_id: str):
     v = configbuilder.save_draft(device_id, draft)
     db.audit(request.session["admin_user"], "allowed-apps", device_id, ", ".join(apps) + f" v{v}")
     return RedirectResponse(f"/admin/devices/{device_id}?ok=apps#apps", status_code=303)
+
+
+# ---------------- iPhone ----------------
+
+@router.get("/admin/ios/new", response_class=HTMLResponse)
+def ios_new_form(request: Request):
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    from . import ios
+    devices = db.query("SELECT id, name, platform FROM devices ORDER BY name")
+    return templates.TemplateResponse("ios_admin.html", {"request": request, "code": None, "devices": devices,
+                                                         "waiting": ios.waiting()})
+
+
+@router.post("/admin/ios/new")
+def ios_new(request: Request, device_name: str = Form("iPhone"), template_device_id: str = Form("")):
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    code = f"{secrets.randbelow(1000000):06d}"
+    now = int(time.time())
+    template = template_device_id.strip() or None
+    if template and not db.query_one("SELECT id FROM devices WHERE id=?", (template,)):
+        template = None
+    with db.tx() as c:
+        c.execute("""INSERT INTO pairing_codes(code, device_name, created_at, expires_at, platform, template_device_id)
+                     VALUES (?,?,?,?,?,?)""",
+                  (code, device_name.strip() or "iPhone", now, now + 7 * 24 * 3600, "ios", template))
+    db.audit(request.session["admin_user"], "pairing-create", None, f"{code} / {device_name} (iPhone)")
+    return RedirectResponse(f"/admin/ios/{code}", status_code=303)
+
+
+@router.get("/admin/ios/{code}", response_class=HTMLResponse)
+def ios_code_page(request: Request, code: str):
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    from . import ios
+    row = db.query_one("SELECT * FROM pairing_codes WHERE code=?", (code,))
+    if not row:
+        return RedirectResponse("/admin", status_code=303)
+    link = ios.page_link(code)
+    return templates.TemplateResponse("ios_admin.html", {
+        "request": request, "code": row, "link": link, "qr": android.qr_svg(link),
+        "expires": _berlin_fmt(row["expires_at"]), "used": bool(row["used_device_id"]),
+        "enrollments": ios.enrollments(code),
+    })

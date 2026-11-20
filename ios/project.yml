@@ -1,0 +1,116 @@
+name: FrohLock
+options:
+  bundleIdPrefix: de.froehlichdienste
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: 33D4MF58H5
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  FrohLock:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+      - path: Sources/FrohLockCore
+        group: Core
+    dependencies:
+      - target: FrohLockMonitor
+      - target: FrohLockShield
+    entitlements:
+      path: App/FrohLock.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.de.froehlichdienste.frohlock]
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: FrohLock
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        CFBundleURLTypes:
+          - CFBundleURLName: de.froehlichdienste.frohlock
+            CFBundleURLSchemes: [frohlock]
+        BGTaskSchedulerPermittedIdentifiers: [de.froehlichdienste.frohlock.refresh]
+        UIBackgroundModes: [fetch]
+        NSPhotoLibraryAddUsageDescription: "Damit Videos von Mama und Papa in deinen Fotos gespeichert werden können."
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.froehlichdienste.frohlock
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Development"
+          PROVISIONING_PROFILE_SPECIFIER: "FrohLock Dev App"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  FrohLockMonitor:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Monitor
+      - Shared
+      - path: Sources/FrohLockCore
+        group: Core
+    entitlements:
+      path: Monitor/Monitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.de.froehlichdienste.frohlock]
+    info:
+      path: Monitor/Info.plist
+      properties:
+        CFBundleDisplayName: FrohLock Monitor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FrohLockMonitor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.froehlichdienste.frohlock.monitor
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Development"
+          PROVISIONING_PROFILE_SPECIFIER: "FrohLock Dev Monitor"
+  FrohLockShield:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Shield
+      - Shared
+      - path: Sources/FrohLockCore
+        group: Core
+    entitlements:
+      path: Shield/Shield.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.de.froehlichdienste.frohlock]
+    info:
+      path: Shield/Info.plist
+      properties:
+        CFBundleDisplayName: FrohLock Sperre
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FrohLockShield
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.froehlichdienste.frohlock.shield
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Development"
+          PROVISIONING_PROFILE_SPECIFIER: "FrohLock Dev Shield"

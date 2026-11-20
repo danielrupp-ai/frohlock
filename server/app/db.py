@@ -67,6 +67,14 @@ CREATE TABLE IF NOT EXISTS reset_tokens (
     used INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS ios_enrollments (
+    udid TEXT PRIMARY KEY,
+    code TEXT,
+    product TEXT,
+    os_version TEXT,
+    created_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS children (
     name TEXT PRIMARY KEY,
     daily_budget INTEGER NOT NULL DEFAULT 0,

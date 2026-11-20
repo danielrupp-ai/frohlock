@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not code %}
+<div class="card">
+  <h1>🍎 iPhone einrichten (ohne App Store)</h1>
+  <p>Ihr bekommt einen <b>Link</b> (und QR-Code). Den am Kinder-iPhone in Safari öffnen – die Seite führt Schritt für Schritt durch.</p>
+  <div class="fl-warn">
+    <b>So läuft es:</b> 1. iPhone meldet sich per Profil an (dauert 1 Minute) → 2. Daniel trägt das iPhone bei Apple ein und baut die App neu
+    (einmal je iPhone, ein paar Stunden) → 3. App über den gleichen Link installieren, Entwicklermodus an, koppeln.<br>
+    Der Link gilt <b>7 Tage</b>. Das Zählen der Zeit läuft auf dem iPhone in 5-Minuten-Schritten.
+  </div>
+  {% if waiting %}
+  <div class="fl-warn" style="border-color:#ffd54f">⏳ <b>{{ waiting|length }} iPhone(s) warten auf den neuen Build:</b>
+    {% for w in waiting %}{{ w["product"] }} (Code {{ w["code"] }}){% if not loop.last %}, {% endif %}{% endfor %}.
+    Auf Daniels Mac: <code>python3 ~/frohlock/ios/tools/release.py</code></div>
+  {% endif %}
+</div>
+<form class="card" method="post" action="/admin/ios/new">
+  <h2>1. Für wen ist das iPhone?</h2>
+  <label class="fl-field">Name, wie er hier im Admin erscheinen soll
+    <input name="device_name" required placeholder="z. B. iPhone Renat" style="width:100%"></label>
+  <h2 style="margin-top:18px">2. Einstellungen gleich übernehmen?</h2>
+  <div class="fl-options">
+    <label class="fl-opt"><input type="radio" name="template_device_id" value="" checked>
+      <span><b>Nein, neu festlegen</b><br><span class="muted">Am iPhone fragt FrohLock nach Eltern-PIN, Schlafenszeit und Tageslimit.</span></span></label>
+    {% for d in devices %}
+    <label class="fl-opt"><input type="radio" name="template_device_id" value="{{ d['id'] }}">
+      <span><b>Wie „{{ d['name'] }}“</b> {% if d['platform'] in ('android','ios') %}📱{% else %}💻{% endif %}<br>
+      <span class="muted">Gleiche Sperrzeiten, gleiches Limit, gleiche PIN.</span></span></label>
+    {% endfor %}
+  </div>
+  <button style="margin-top:18px;font-size:16px;padding:12px 20px" type="submit">Link erstellen</button>
+</form>
+{% else %}
+<div class="card">
+  <h1>🍎 Link für „{{ code["device_name"] }}“</h1>
+  <p>Am <b>Kinder-iPhone</b> in Safari öffnen (QR-Code mit der iPhone-Kamera scannen oder Link schicken):</p>
+  <p style="font-size:18px"><a href="{{ link }}" style="color:#9ecbff">{{ link }}</a></p>
+  <div style="max-width:260px;background:#fff;padding:8px;border-radius:10px">{{ qr|safe }}</div>
+  <p class="muted">Code {{ code["code"] }} · gültig bis {{ expires }}</p>
+  <h2 style="margin-top:18px">Stand</h2>
+  {% if used %}
+    <p>✅ Gekoppelt – <a href="/admin/devices/{{ code['used_device_id'] }}" style="color:#9ecbff">zum Gerät</a>.</p>
+  {% elif not enrollments %}
+    <p>⏳ Noch kein iPhone angemeldet (Schritt 1 auf der Seite).</p>
+  {% else %}
+    {% for e in enrollments %}
+    <p>{% if e["built"] %}✅ {{ e["product"] }} angemeldet und im Build – App kann installiert werden.
+       {% else %}⏳ {{ e["product"] }} (iOS-Build {{ e["os_version"] }}) angemeldet – <b>wartet auf neuen Build</b>
+       (Daniels Mac: <code>python3 ~/frohlock/ios/tools/release.py</code>).{% endif %}</p>
+    {% endfor %}
+  {% endif %}
+  <script>setTimeout(function(){location.reload()},30000)</script>
+</div>
+{% endif %}
+<style>
+  .fl-warn { background:rgba(255,171,64,.12); border:1px solid rgba(255,171,64,.5); border-radius:10px; padding:10px 14px; margin:12px 0 0; font-size:14px; line-height:1.5; }
+  .fl-field { display:block; font-size:14px; }
+  .fl-field input { margin-top:6px; }
+  .fl-options { display:flex; flex-direction:column; gap:8px; }
+  .fl-opt { display:flex; gap:10px; align-items:flex-start; background:#0b1f3a; border-radius:10px; padding:10px 12px; cursor:pointer; font-size:14px; }
+  .fl-opt input { margin-top:3px; }
+  .card svg { width:100%; height:auto; display:block; }
+</style>
+{% endblock %}

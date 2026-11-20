@@ -4,7 +4,7 @@
 {{ flash_box(flash) }}
 <div class="card">
   <div class="row" style="justify-content:space-between">
-    <h1 style="margin:0">{% if is_android %}📱{% else %}💻{% endif %} {{ dev["name"] }}</h1>
+    <h1 style="margin:0">{% if is_android %}📱{% elif is_ios %}🍎{% else %}💻{% endif %} {{ dev["name"] }}</h1>
     <div>
       <span class="badge {{ lock_state.kind }}">{{ lock_state.label }}</span>
     </div>
@@ -18,11 +18,23 @@
   </p>
   {% if dev["lock_reason"] %}<p class="muted">Grund: {{ dev["lock_reason"] }}</p>{% endif %}
   {% set aa = dev["agent_age"] if "agent_age" in dev.keys() else -1 %}
+  {% if is_ios %}
+  <p class="muted">Bildschirmzeit-Erlaubnis:
+    {% if ios_info.get("screenTimeAuthorized") %}<span style="color:#69f0ae">✓ erteilt</span>
+    {% else %}<span style="color:#ff8a80">❌ fehlt – FrohLock kann nicht sperren (am iPhone FrohLock öffnen)</span>{% endif %}
+    · {{ ios_info.get("model", "") }} · {{ ios_info.get("os", "") }}</p>
+  <p class="muted">Apps: {{ ios_info.get("countedCategories", 0) }} Kategorien + {{ ios_info.get("countedApps", 0) }} Apps werden gezählt und gesperrt,
+    {{ ios_info.get("allowedApps", 0) }} Apps sind immer erlaubt. Ändern: am iPhone Eltern-PIN → „Apps-Auswahl ändern“.
+    {% if ios_info.get("countedCategories", 0) == 0 and ios_info.get("countedApps", 0) == 0 %}<span style="color:#ff8a80">⚠ nichts gewählt – dann zählt und sperrt FrohLock nichts</span>{% endif %}</p>
+  <p class="muted">iPhone meldet sich etwa alle 15 Minuten und bei jeder Nutzung (5-Minuten-Schritte). Befehle kommen deshalb mit bis zu 15 Min Verzögerung an.
+    {% if ios_info.get("latest") and dev["app_version"] and dev["app_version"] != ios_info.get("latest") %}<br>Neue Version {{ ios_info.get("latest") }} bereit – am iPhone erscheint „Neue Version installieren“.{% endif %}</p>
+  {% else %}
   <p class="muted">{% if is_android %}Sperrbildschirm{% else %}Overlay-Anzeige{% endif %}:
     {% if aa is none or aa < 0 %}<span style="color:#ff8a80">❌ nicht aktiv (Sperre würde nicht angezeigt!)</span>
     {% elif aa <= 120 %}<span style="color:#69f0ae">✓ aktiv</span>
     {% else %}<span style="color:#ffab40">⚠ vor {{ aa }} s zuletzt aktiv</span>{% endif %}
   </p>
+  {% endif %}
   {% if not has_pin %}<p style="color:#ffab40">⚠ Für dieses Gerät ist noch keine Eltern-PIN gesetzt – bis dahin sperrt FrohLock <b>nicht</b>.
     Unten „PIN setzen“ oder „Einstellungen übernehmen“.</p>{% endif %}
 </div>
@@ -116,7 +128,7 @@
 </div>
 {% endif %}
 
-{% if is_android %}
+{% if is_android or is_ios %}
 <div class="card" id="nachricht">
   <h2>💌 Nachricht ans Kind</h2>
   <p class="muted" style="margin:0 0 10px">Erscheint am Handy als Vollbild (auch während einer Sperre), bis das Kind den Knopf tippt. Braucht FrohLock 1.0.9 – bis dahin wartet sie.</p>
@@ -146,7 +158,7 @@
     {% if cs.over %}<span class="badge locked">aufgebraucht</span>{% else %}– noch {{ cs.left }} Min übrig{% endif %}{% else %} (kein Limit gesetzt){% endif %}
   </p>
   <p class="muted" style="margin:0 0 10px">
-    {% for u in cs.devices %}{% if u.platform == "android" %}📱{% else %}💻{% endif %} {{ u.name }}: {{ u.minutes }} Min{% if not loop.last %} · {% endif %}{% endfor %}
+    {% for u in cs.devices %}{% if u.platform == "android" %}📱{% elif u.platform == "ios" %}🍎{% else %}💻{% endif %} {{ u.name }}: {{ u.minutes }} Min{% if not loop.last %} · {% endif %}{% endfor %}
   </p>
   <p class="muted" style="margin:0 0 10px">Die Zeit ist geräteunabhängig: {{ cs.name }} kann sie am Laptop, am Handy oder gemischt nutzen. Ist sie aufgebraucht, sperren alle Geräte. Das Limit stellst du unten bei „Einstellungen“ ein – es gilt für alle Geräte von {{ cs.name }}.</p>
   {% else %}
@@ -160,7 +172,7 @@
   </form>
   <p class="muted" style="margin:6px 0 0">Feld leeren und speichern = Gerät zählt wieder nur für sich. Gleichzeitig genutzte Geräte zählen beide (1 Min Handy + 1 Min Laptop = 2 Min).</p>
   {% if child and dev["app_version"] %}
-  {% set need = "1.0.8" if is_android else "0.29.0" %}
+  {% set need = "1.0.8" if is_android else ("1.0.0" if is_ios else "0.29.0") %}
   <p class="muted" style="margin:6px 0 0">Braucht FrohLock {{ need }} oder neuer auf dem Gerät (jetzt: {{ dev["app_version"] }}). Ältere Versionen sperren nur nach ihrer eigenen Zeit.</p>
   {% endif %}
 </div>
@@ -336,7 +348,7 @@
         <input type="hidden" name="kind" value="update"><button class="secondary" type="submit">Update</button>
       </form>
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command"
-            onsubmit="return confirm({% if is_android %}'FrohLock auf dem Handy freigeben? Alle Sperren werden aufgehoben, danach kann die App gelöscht werden.'{% else %}'Gerät wirklich remote deinstallieren (Admin-Wipe)?'{% endif %});">
+            onsubmit="return confirm({% if is_ios %}'FrohLock auf dem iPhone freigeben? Alle Sperren werden aufgehoben.'{% elif is_android %}'FrohLock auf dem Handy freigeben? Alle Sperren werden aufgehoben, danach kann die App gelöscht werden.'{% else %}'Gerät wirklich remote deinstallieren (Admin-Wipe)?'{% endif %});">
         <input type="hidden" name="kind" value="uninstall"><button class="danger" type="submit">App entfernen</button>
       </form>
     </div>
