@@ -61,6 +61,8 @@ data class LockConfig(
     val maxTrustedTimeStalenessMinutes: Int,
     /** Apps, die auch während jeder Sperre offen bleiben (Android-Paketnamen), z. B. Telegram, Signal. */
     val alwaysAllowedApps: List<String> = DEFAULT_ALLOWED_APPS,
+    /** Ausnahme „zählt nicht zur Bildschirmzeit“: Zeit in diesen Apps (Paketnamen) senkt das Tageslimit nicht. */
+    val uncountedApps: List<String> = emptyList(),
 ) {
     fun effectiveDailyBudget(dow: Int): Int {
         if (dailyBudgetByWeekday.size == 7) {
@@ -79,6 +81,7 @@ data class LockConfig(
         fun fromJson(o: JSONObject): LockConfig {
             val wins = o.optJSONArray("windows") ?: JSONArray()
             val allowed = o.optJSONArray("alwaysAllowedApps")
+            val uncounted = o.optJSONArray("uncountedApps") ?: JSONArray()
             val wb = o.optJSONArray("dailyBudgetByWeekday") ?: JSONArray()
             val pins = o.optJSONArray("tlsSpkiPins") ?: JSONArray()
             return LockConfig(
@@ -97,6 +100,7 @@ data class LockConfig(
                 maxTrustedTimeStalenessMinutes = o.optInt("maxTrustedTimeStalenessMinutes", 720),
                 alwaysAllowedApps = if (allowed == null) DEFAULT_ALLOWED_APPS
                     else (0 until allowed.length()).map { allowed.optString(it).trim() }.filter { it.isNotEmpty() },
+                uncountedApps = (0 until uncounted.length()).map { uncounted.optString(it).trim() }.filter { it.isNotEmpty() },
             )
         }
     }

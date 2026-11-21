@@ -19,4 +19,14 @@ object ForegroundRule {
      */
     fun effective(foreground: String?, lastReal: String?, system: Set<String>): String? =
         if (foreground != null && foreground in system) lastReal else foreground
+
+    /**
+     * Zählt die Zeit gerade NICHT aufs Tageslimit? Nur wenn die (echte) vorderste App eine Ausnahme
+     * „zählt nicht“ ist. Unbekannt (keine Nutzungsdaten) oder FrohLock selbst → zählt (lieber zu viel als Schlupfloch).
+     */
+    fun isUncounted(foreground: String?, lastReal: String?, system: Set<String>, uncounted: Collection<String>, own: String): Boolean {
+        if (uncounted.isEmpty()) return false
+        val real = effective(foreground, lastReal, system) ?: return false
+        return real != own && real in uncounted
+    }
 }

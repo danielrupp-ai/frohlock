@@ -751,3 +751,55 @@ def test_iphone_enroll_install_and_pair(client, monkeypatch, tmp_path):
     page = client.get(f"/admin/devices/{did}").text
     assert "Bildschirmzeit-Erlaubnis" in page and "12 Kategorien" in page and "Nachricht ans Kind" in page
     assert "gekoppelt" in client.get(f"/ios/{code}").text
+
+
+def test_android_app_exception_open_then_defined(client):
+    """21.11.2026: Ausnahme für eine App erst vormerken („offen" = wirkt nicht), Art später festlegen."""
+    import json as _json
+    import app.db as dbmod
+    with open(PUB_PATH, "rb") as fh:
+        pub = load_pem_public_key(fh.read())
+    _admin_login(client)
+    client.post("/admin/android/new", data={"device_name": "Handy"})
+    code = dbmod.query_one("SELECT code FROM pairing_codes")["code"]
+    ph = client.post("/devices/register", json={"pairingCode": code, "platform": "android"}).json()
+    did = ph["deviceId"]
+    hdr = {"Authorization": f"Bearer {ph['token']}"}
+    client.post(f"/devices/{did}/config-draft", headers=hdr, json={"pinHash": "aA==", "pinSalt": "aA=="})
+
+    def cfg():
+        env = client.get(f"/devices/{did}/config?have=0", headers=hdr).json()
+        return _json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+
+    # Handy meldet installierte Apps einmal; der nächste Heartbeat ohne Liste behält sie.
+    client.post(f"/devices/{did}/heartbeat", headers=hdr, json={"platform": "android", "appVersion": "1.0.12",
+                "deviceInfo": {"installedApps": [{"p": "com.duolingo", "n": "Duolingo"}, {"p": "com.mojang.minecraftpe", "n": "Minecraft"}]}})
+    client.post(f"/devices/{did}/heartbeat", headers=hdr, json={"platform": "android", "appVersion": "1.0.12",
+                "deviceInfo": {"exemptMinutes": 7}})
+    page = client.get(f"/admin/devices/{did}").text
+    assert "Ausnahme für eine App" in page and 'data-label="Duolingo"' in page and "Heute 7 Min" in page
+
+    r = client.post(f"/admin/devices/{did}/app-exceptions", data={"new_package": "com.duolingo", "new_label": "Duolingo",
+                    "new_mode": "offen"}, follow_redirects=False)
+    assert r.status_code == 303 and "ok=ausnahme" in r.headers["location"]
+    c = cfg()
+    assert "com.duolingo" not in c["alwaysAllowedApps"] and c["uncountedApps"] == []
+    page = client.get(f"/admin/devices/{did}").text
+    assert "com.duolingo" in page and 'value="offen" selected' in page
+
+    client.post(f"/admin/devices/{did}/app-exceptions", data={"mode_0": "zeit"})
+    c = cfg()
+    assert c["uncountedApps"] == ["com.duolingo"] and "com.duolingo" not in c["alwaysAllowedApps"]
+
+    client.post(f"/admin/devices/{did}/app-exceptions", data={"mode_0": "beides"})
+    c = cfg()
+    assert c["uncountedApps"] == ["com.duolingo"] and "com.duolingo" in c["alwaysAllowedApps"]
+    assert "org.telegram.messenger" in c["alwaysAllowedApps"]   # Messenger-Auswahl bleibt unberührt
+
+    r = client.post(f"/admin/devices/{did}/app-exceptions", data={"mode_0": "beides", "new_package": "kaputt!"},
+                    follow_redirects=False)
+    assert "apppaketfalsch" in r.headers["location"]
+
+    client.post(f"/admin/devices/{did}/app-exceptions", data={"del_0": "on"})
+    c = cfg()
+    assert c["uncountedApps"] == [] and "com.duolingo" not in c["alwaysAllowedApps"]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from . import db
@@ -11,6 +12,46 @@ from .signing import make_envelope
 # Android: Apps, die auch während jeder Sperre offen bleiben. Standard = Telegram + Signal (Daniel 01.11.2026).
 DEFAULT_ALLOWED_APPS = ["org.telegram.messenger", "org.telegram.messenger.web", "org.thoughtcrime.securesms"]
 # Für die Auswahl im Admin (Name -> Paketnamen).
+# Ausnahme für einzelne Apps (Android). Art der Ausnahme ist je App wählbar – „offen" = vorgemerkt, wirkt noch nicht.
+APP_EXCEPTION_MODES = {
+    "offen": ("Noch nicht festgelegt",
+              "Die App ist vorgemerkt, am Handy ändert sich noch nichts."),
+    "sperre": ("Auch während der Sperre erlaubt",
+               "Die App bleibt in Schlafenszeit, Tageslimit und Auszeit offen (Knopf auf dem Sperrbildschirm). "
+               "Außerhalb der Sperre zählt sie ganz normal zur Bildschirmzeit."),
+    "zeit": ("Zählt nicht zur Bildschirmzeit",
+             "Außerhalb der Sperre frei nutzbar, das Tageslimit sinkt dabei nicht. In der Sperre bleibt sie gesperrt."),
+    "beides": ("Immer frei – auch in der Sperre, und zählt nie",
+               "Die App ist jederzeit offen und kostet nie Bildschirmzeit."),
+}
+PACKAGE_RE = re.compile(r"[A-Za-z][\w]*(\.[A-Za-z_][\w]*)+")
+
+
+def app_exceptions(draft: dict) -> list[dict]:
+    """Gespeicherte Ausnahmen bereinigt: [{package, label, mode}]."""
+    out, seen = [], set()
+    for e in draft.get("appExceptions") or []:
+        pkg = str((e or {}).get("package", "")).strip()
+        if not PACKAGE_RE.fullmatch(pkg) or pkg in seen:
+            continue
+        seen.add(pkg)
+        mode = e.get("mode") if e.get("mode") in APP_EXCEPTION_MODES else "offen"
+        out.append({"package": pkg, "label": str(e.get("label") or "")[:60], "mode": mode})
+    return out
+
+
+def _apply_app_exceptions(draft: dict) -> tuple[list[str], list[str]]:
+    """(alwaysAllowedApps inkl. Ausnahmen „sperre/beides", uncountedApps aus „zeit/beides")."""
+    allowed = list(draft.get("alwaysAllowedApps", DEFAULT_ALLOWED_APPS))
+    uncounted: list[str] = []
+    for e in app_exceptions(draft):
+        if e["mode"] in ("sperre", "beides") and e["package"] not in allowed:
+            allowed.append(e["package"])
+        if e["mode"] in ("zeit", "beides"):
+            uncounted.append(e["package"])
+    return allowed, uncounted
+
+
 KNOWN_MESSENGERS = [
     ("Telegram", ["org.telegram.messenger", "org.telegram.messenger.web"]),
     ("Signal", ["org.thoughtcrime.securesms"]),
@@ -59,6 +100,7 @@ def build_full_config(device_id: str) -> dict | None:
         draft["dailyBudgetMinutes"] = child["dailyBudgetMinutes"]
         draft["dailyBudgetByWeekday"] = child["dailyBudgetByWeekday"]
 
+    allowed_apps, uncounted_apps = _apply_app_exceptions(draft)
     return {
         "configVersion": version,
         "deviceId": device_id,
@@ -74,7 +116,9 @@ def build_full_config(device_id: str) -> dict | None:
         "serverPollSeconds": 30,
         "maxTrustedTimeStalenessMinutes": draft.get("maxTrustedTimeStalenessMinutes", 4320),
         "failSecureLocked": True,
-        "alwaysAllowedApps": draft.get("alwaysAllowedApps", DEFAULT_ALLOWED_APPS),
+        "alwaysAllowedApps": allowed_apps,
+        # Ab Android 1.0.12: Zeit in diesen Apps zählt nicht aufs Tageslimit (ältere Versionen ignorieren das Feld).
+        "uncountedApps": uncounted_apps,
     }
 
 
@@ -100,7 +144,8 @@ def current_version(device_id: str) -> int:
 
 # Was beim Übernehmen von einem anderen Gerät mitkommt (Zeitplan, Limits, PIN, Entsperrdauer).
 _COPY_KEYS = ("windows", "dailyBudgetMinutes", "dailyBudgetByWeekday", "unlockGraceMinutes",
-              "pinHash", "pinSalt", "pinIterations", "maxTrustedTimeStalenessMinutes", "alwaysAllowedApps")
+              "pinHash", "pinSalt", "pinIterations", "maxTrustedTimeStalenessMinutes", "alwaysAllowedApps",
+              "appExceptions")
 
 
 def copy_settings(source_id: str, target_id: str) -> str | None:

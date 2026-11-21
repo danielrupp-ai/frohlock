@@ -365,6 +365,8 @@ def device_detail(request: Request, device_id: str):
         "allowed_now": allowed_now,
         "messengers": [{"name": n, "key": pkgs[0], "on": any(p in allowed for p in pkgs)} for n, pkgs in configbuilder.KNOWN_MESSENGERS],
         "allowed_extra": ", ".join(p for p in allowed if p not in known_pkgs),
+        **_app_exception_context(draft, android.device_info(dev["device_info"] if "device_info" in keys else None),
+                                 dev["app_version"] if "app_version" in keys else ""),
         "android_info": android.device_info(dev["device_info"] if "device_info" in keys else None),
         "android_update": android.apk_version(),
         "other_devices": others,
@@ -652,6 +654,58 @@ async def set_allowed_apps(request: Request, device_id: str):
     v = configbuilder.save_draft(device_id, draft)
     db.audit(request.session["admin_user"], "allowed-apps", device_id, ", ".join(apps) + f" v{v}")
     return RedirectResponse(f"/admin/devices/{device_id}?ok=apps#apps", status_code=303)
+
+
+def _app_exception_context(draft: dict, info: dict, app_version: str) -> dict:
+    """Karte „Ausnahme für eine App": gespeicherte Ausnahmen + installierte Apps (vom Handy gemeldet) zur Auswahl."""
+    installed = []
+    for a in info.get("installedApps") or []:
+        if isinstance(a, dict) and configbuilder.PACKAGE_RE.fullmatch(str(a.get("p", ""))):
+            installed.append({"package": a["p"], "label": str(a.get("n") or a["p"])[:60]})
+    installed.sort(key=lambda a: a["label"].lower())
+    names = {a["package"]: a["label"] for a in installed}
+    rows = []
+    for e in configbuilder.app_exceptions(draft):
+        rows.append({**e, "name": e["label"] or names.get(e["package"], e["package"]),
+                     "installed": e["package"] in names if installed else None})
+    from .api import _version_tuple
+    return {
+        "app_exceptions": rows,
+        "app_exception_modes": [{"key": k, "title": t, "text": x} for k, (t, x) in configbuilder.APP_EXCEPTION_MODES.items()],
+        "installed_apps": [a for a in installed if a["package"] not in {r["package"] for r in rows}],
+        "uncounted_supported": _version_tuple(app_version or "0") >= _version_tuple("1.0.12"),
+        "exempt_minutes": info.get("exemptMinutes"),
+    }
+
+
+@router.post("/admin/devices/{device_id}/app-exceptions")
+async def set_app_exceptions(request: Request, device_id: str):
+    """Android: Ausnahme für einzelne Apps – vormerken, Art festlegen/ändern, entfernen."""
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    form = await request.form()
+    draft = _load_draft(device_id)
+    rows = configbuilder.app_exceptions(draft)
+    keep = []
+    for i, e in enumerate(rows):
+        if form.get(f"del_{i}"):
+            continue
+        mode = str(form.get(f"mode_{i}", e["mode"]))
+        e["mode"] = mode if mode in configbuilder.APP_EXCEPTION_MODES else e["mode"]
+        keep.append(e)
+    new_pkg = str(form.get("new_package", "") or "").strip()
+    if new_pkg:
+        if not configbuilder.PACKAGE_RE.fullmatch(new_pkg):
+            return RedirectResponse(f"/admin/devices/{device_id}?ok=apppaketfalsch#ausnahmen", status_code=303)
+        if new_pkg not in {e["package"] for e in keep}:
+            mode = str(form.get("new_mode", "offen"))
+            keep.append({"package": new_pkg, "label": str(form.get("new_label", "") or "")[:60],
+                         "mode": mode if mode in configbuilder.APP_EXCEPTION_MODES else "offen"})
+    draft["appExceptions"] = keep
+    v = configbuilder.save_draft(device_id, draft)
+    db.audit(request.session["admin_user"], "app-exceptions", device_id,
+             ", ".join(f"{e['package']}={e['mode']}" for e in keep) + f" v{v}")
+    return RedirectResponse(f"/admin/devices/{device_id}?ok=ausnahme#ausnahmen", status_code=303)
 
 
 # ---------------- iPhone ----------------

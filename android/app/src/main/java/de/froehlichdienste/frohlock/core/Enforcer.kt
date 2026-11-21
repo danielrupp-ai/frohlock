@@ -248,6 +248,14 @@ class Enforcer(
         state.addUsage(day, nowUnix(), seconds)
     }
 
+    /** Zeit in einer Ausnahme-App („zählt nicht zur Bildschirmzeit“) – gemerkt, nicht aufs Limit. */
+    fun accrueExempt(seconds: Int) = synchronized(lock) {
+        if (config == null) return
+        val day = localNow().toLocalDate()
+        warnIfBackwards(day)
+        state.addExempt(day, seconds)
+    }
+
     /** Jede Sekunde mit Bildschirm an festhalten – gezählt oder gesperrt (Basis der Android-Gegenprobe). */
     fun accrueOn(seconds: Int, lockedInAllowedApp: Boolean) = synchronized(lock) {
         if (config == null) return
@@ -288,6 +296,7 @@ class Enforcer(
         (missed / 60).toInt()
     }
 
+    fun todayExemptMinutes(): Int = synchronized(lock) { state.exemptMinutes(localNow().toLocalDate()) }
     fun todayMissedMinutes(): Int = synchronized(lock) { state.missedMinutes(localNow().toLocalDate()) }
     fun todayAllowedInLockMinutes(): Int = synchronized(lock) { state.allowedInLockMinutes(localNow().toLocalDate()) }
     fun todayOnMinutes(): Int = synchronized(lock) { (state.onSeconds(localNow().toLocalDate()) / 60).toInt() }

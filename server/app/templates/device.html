@@ -113,6 +113,58 @@
     <button style="margin-top:12px" type="submit">Speichern</button>
   </form>
 </div>
+
+<div class="card" id="ausnahmen">
+  <h2>🧩 Ausnahme für eine App</h2>
+  <p class="muted" style="margin:0 0 10px">Hier können Sie einzelne Apps auf dem Handy anders behandeln als den Rest. Zuerst die App auswählen –
+    welche Ausnahme gelten soll, können Sie gleich oder später festlegen. Solange „Noch nicht festgelegt“ gewählt ist, ändert sich am Handy nichts.</p>
+  <details style="margin:0 0 10px"><summary class="muted">Was bedeutet das?</summary>
+    <ul class="muted" style="margin:6px 0 0">
+      {% for m in app_exception_modes %}<li><b>{{ m.title }}:</b> {{ m.text }}</li>{% endfor %}
+    </ul>
+    <p class="muted" style="margin:6px 0 0">Telefon und Wecker sind ohnehin immer erlaubt. Eine App, die in der Sperre erlaubt ist, erscheint als Knopf auf dem Sperrbildschirm.</p>
+  </details>
+  {% if not uncounted_supported %}<p style="margin:0 0 10px;color:#ffab40">Hinweis: „Zählt nicht zur Bildschirmzeit“ wirkt erst ab FrohLock 1.0.12 auf dem Handy
+    (jetzt: {{ dev['app_version'] or 'unbekannt' }}). Das Update kommt automatisch.</p>{% endif %}
+  {% if android_info and android_info.get("usageAccess") == false %}<p style="margin:0 0 10px;color:#ffab40">Hinweis: Am Handy fehlt die Erlaubnis
+    „Nutzungsdatenzugriff“ – ohne sie erkennt FrohLock nicht, welche App offen ist, und die Ausnahmen wirken nicht.</p>{% endif %}
+  <form method="post" action="/admin/devices/{{ dev['id'] }}/app-exceptions">
+    {% if app_exceptions %}
+    <table style="width:100%;margin-bottom:10px">
+      <tr><th style="text-align:left">App</th><th style="text-align:left">Ausnahme</th><th>Entfernen</th></tr>
+      {% for e in app_exceptions %}
+      <tr>
+        <td>{{ e.name }}<br><span class="muted" style="font-size:12px">{{ e.package }}{% if e.installed == false %} · ⚠ auf dem Handy nicht gefunden{% endif %}</span></td>
+        <td><select name="mode_{{ loop.index0 }}">
+          {% for m in app_exception_modes %}<option value="{{ m.key }}" {% if m.key == e.mode %}selected{% endif %}>{{ m.title }}</option>{% endfor %}
+        </select></td>
+        <td style="text-align:center"><input type="checkbox" name="del_{{ loop.index0 }}"></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted" style="margin:0 0 10px"><b>Zurzeit:</b> keine Ausnahme eingerichtet.</p>{% endif %}
+    {% if exempt_minutes %}<p class="muted" style="margin:0 0 10px">Heute {{ exempt_minutes }} Min in Apps, die nicht zur Bildschirmzeit zählen.</p>{% endif %}
+    <div class="row" style="align-items:flex-end">
+      <label class="muted">App hinzufügen
+        {% if installed_apps %}
+        <select name="new_package" style="display:block;margin-top:4px" onchange="this.form.new_label.value=this.options[this.selectedIndex].dataset.label||''">
+          <option value="">– App auswählen –</option>
+          {% for a in installed_apps %}<option value="{{ a.package }}" data-label="{{ a.label }}">{{ a.label }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <input name="new_package" placeholder="Paketname, z. B. com.duolingo" style="display:block;margin-top:4px">
+        <span style="display:block;font-size:12px">Die Liste der Apps auf dem Handy erscheint hier, sobald das Handy FrohLock 1.0.12 hat.</span>
+        {% endif %}
+      </label>
+      <input type="hidden" name="new_label" value="">
+      <label class="muted">Ausnahme
+        <select name="new_mode" style="display:block;margin-top:4px">
+          {% for m in app_exception_modes %}<option value="{{ m.key }}">{{ m.title }}</option>{% endfor %}
+        </select></label>
+    </div>
+    <button style="margin-top:12px" type="submit">Speichern</button>
+  </form>
+</div>
 {% endif %}
 
 {% if gap_alerts %}

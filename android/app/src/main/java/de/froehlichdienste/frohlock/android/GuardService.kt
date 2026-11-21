@@ -182,7 +182,9 @@ class GuardService : Service() {
             outsideSince = 0
             if (!d.locked) {
                 DeviceOwner.suspendApps(this, false)
-                if (on && dt > 0) e.accrueUsage(dt)
+                if (on && dt > 0) {
+                    if (inUncountedApp()) e.accrueExempt(dt) else e.accrueUsage(dt)
+                }
             }
         }
         // Jede Sekunde „Bildschirm an" merken (gezählt oder gesperrt) – Basis für die Gegenprobe mit Android.
@@ -207,6 +209,14 @@ class GuardService : Service() {
         st.lastTickBootCount = bootCount()
         if (up - lastSave > 60_000) { lastSave = up; Guard.saveState() }
         updateNotification(d.locked, d.reason)
+    }
+
+    /** Ist gerade eine App mit Ausnahme „zählt nicht zur Bildschirmzeit“ vorne? (Admin → „Ausnahme für eine App“) */
+    private fun inUncountedApp(): Boolean {
+        val uncounted = Guard.enforcer.currentConfig?.uncountedApps ?: return false
+        if (uncounted.isEmpty()) return false
+        val fg = ForegroundApp.current(this)
+        return ForegroundRule.isUncounted(fg, ForegroundApp.lastReal, AllowedApps.SYSTEM, uncounted, packageName)
     }
 
     private var outsideSince = 0L
@@ -501,6 +511,8 @@ class GuardService : Service() {
                     .put("androidOnMinutes", Guard.enforcer.todayAndroidOnMinutes())
                     .put("missedMinutes", Guard.enforcer.todayMissedMinutes())
                     .put("allowedInLockMinutes", Guard.enforcer.todayAllowedInLockMinutes())
+                    .put("exemptMinutes", Guard.enforcer.todayExemptMinutes())
+                    .also { InstalledApps.maybePut(ctx, it) }
                     .put("zone", Guard.clock.zone.id)
                     .put("zoneMismatch", Guard.clock.systemZoneMismatch() ?: "")
                     .put("missing", org.json.JSONArray(if (DeviceOwner.isDeviceOwner(ctx)) emptyList() else WeakGuard.missing(ctx))))

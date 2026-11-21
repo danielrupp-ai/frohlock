@@ -22,6 +22,8 @@ class RuntimeState {
     var onSecondsToday = 0L
     /** Davon in der Sperre in einer erlaubten App (Telegram, Signal, Telefon) – zählt nicht aufs Limit, wird aber gezeigt. */
     var allowedInLockSecondsToday = 0L
+    /** Zeit in Apps mit Ausnahme „zählt nicht zur Bildschirmzeit“ (außerhalb der Sperre) – nur Anzeige. */
+    var exemptSecondsToday = 0L
     /** Aus Androids eigenen Bildschirm-Ereignissen nachgezählte Zeit (FrohLock lief nicht oder sah den Bildschirm nicht). */
     var missedSecondsToday = 0L
     /** Gegenprobe: Stand von Android („Bildschirm an + entsperrt" seit Mitternacht) und von FrohLock beim letzten Abgleich. */
@@ -87,6 +89,12 @@ class RuntimeState {
         if (lockedInAllowedApp) allowedInLockSecondsToday += seconds
     }
 
+    /** Zeit in einer Ausnahme-App („zählt nicht“): wird gemerkt, aber NICHT aufs Limit gerechnet. */
+    fun addExempt(day: LocalDate, seconds: Int) {
+        rollDay(day)
+        exemptSecondsToday += seconds
+    }
+
     /** Verpasste Zeit nachzählen (Android sah den Bildschirm an, FrohLock nicht): zählt aufs Limit, ohne Uhrzeit-Abschnitt. */
     fun addMissedUsage(day: LocalDate, seconds: Int) {
         if (seconds <= 0) return
@@ -105,7 +113,7 @@ class RuntimeState {
         if (usageDay == d) return false
         if (usageDay.isNotEmpty() && usageDay > d) return true
         usageDay = d; usageSecondsToday = 0; usageSegmentsToday.clear()
-        onSecondsToday = 0; allowedInLockSecondsToday = 0; missedSecondsToday = 0
+        onSecondsToday = 0; allowedInLockSecondsToday = 0; missedSecondsToday = 0; exemptSecondsToday = 0
         ledgerBaseAndroidSeconds = -1; ledgerBaseOwnSeconds = 0; ledgerAndroidSecondsToday = 0
         return false
     }
@@ -121,6 +129,7 @@ class RuntimeState {
     fun segments(day: LocalDate): List<UsageSegment> = if (sameDay(day)) usageSegmentsToday else emptyList()
     fun onSeconds(day: LocalDate) = if (sameDay(day)) onSecondsToday else 0L
     fun allowedInLockMinutes(day: LocalDate) = if (sameDay(day)) (allowedInLockSecondsToday / 60).toInt() else 0
+    fun exemptMinutes(day: LocalDate) = if (sameDay(day)) (exemptSecondsToday / 60).toInt() else 0
     fun missedMinutes(day: LocalDate) = if (sameDay(day)) (missedSecondsToday / 60).toInt() else 0
     fun ledgerAndroidMinutes(day: LocalDate) = if (sameDay(day)) (ledgerAndroidSecondsToday / 60).toInt() else 0
 
@@ -139,6 +148,7 @@ class RuntimeState {
         .put("onSecondsToday", onSecondsToday)
         .put("allowedInLockSecondsToday", allowedInLockSecondsToday)
         .put("missedSecondsToday", missedSecondsToday)
+        .put("exemptSecondsToday", exemptSecondsToday)
         .put("ledgerBaseAndroidSeconds", ledgerBaseAndroidSeconds)
         .put("ledgerBaseOwnSeconds", ledgerBaseOwnSeconds)
         .put("ledgerAndroidSecondsToday", ledgerAndroidSecondsToday)
@@ -175,6 +185,7 @@ class RuntimeState {
             onSecondsToday = o.optLong("onSecondsToday", usageSecondsToday)
             allowedInLockSecondsToday = o.optLong("allowedInLockSecondsToday")
             missedSecondsToday = o.optLong("missedSecondsToday")
+            exemptSecondsToday = o.optLong("exemptSecondsToday")
             ledgerBaseAndroidSeconds = o.optLong("ledgerBaseAndroidSeconds", -1)
             ledgerBaseOwnSeconds = o.optLong("ledgerBaseOwnSeconds")
             ledgerAndroidSecondsToday = o.optLong("ledgerAndroidSecondsToday")

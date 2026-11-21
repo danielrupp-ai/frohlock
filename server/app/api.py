@@ -120,12 +120,22 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
              -1 if hb.lockVisible is None else (1 if hb.lockVisible else 0), device_id),
         )
         if hb.platform:
+            info = dict(hb.deviceInfo or {})
+            if "installedApps" not in info:
+                # Liste der installierten Apps schickt das Handy nur ab und zu mit – letzte Liste behalten.
+                prev_row = c.execute("SELECT device_info FROM devices WHERE id=?", (device_id,)).fetchone()
+                try:
+                    prev = json.loads(prev_row["device_info"] or "{}") if prev_row else {}
+                except ValueError:
+                    prev = {}
+                if isinstance(prev, dict) and prev.get("installedApps"):
+                    info["installedApps"] = prev["installedApps"]
             c.execute(
                 """UPDATE devices SET platform=?, device_owner=?, lock_task=?, device_info=?, relaxed_until=?
                    WHERE id=?""",
                 (hb.platform, None if hb.deviceOwner is None else int(hb.deviceOwner),
                  None if hb.lockTaskActive is None else int(hb.lockTaskActive),
-                 json.dumps(hb.deviceInfo or {}), hb.relaxedUntilUnix, device_id),
+                 json.dumps(info), hb.relaxedUntilUnix, device_id),
             )
         alerts.on_heartbeat_seen(c, device_id, now)
         new_lines = _remember_gap_alerts(c, device_id, hb.recentAudit)

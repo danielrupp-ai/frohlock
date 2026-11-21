@@ -366,4 +366,37 @@ class ForegroundRuleTests {
         en.messageRead("m1")
         assertNull(en.pendingMessage)
     }
+
+    @Test fun uncountedOnlyForRealExceptionApp() {
+        val system = setOf("com.android.permissioncontroller", "com.google.android.photopicker")
+        val un = listOf("com.duolingo")
+        assertTrue(ForegroundRule.isUncounted("com.duolingo", null, system, un, "de.froehlichdienste.frohlock"))
+        // Dialog über der Ausnahme-App erbt „zählt nicht“, Dialog über einem Spiel zählt.
+        assertTrue(ForegroundRule.isUncounted("com.google.android.photopicker", "com.duolingo", system, un, "x"))
+        assertFalse(ForegroundRule.isUncounted("com.android.permissioncontroller", "com.game", system, un, "x"))
+        // Unbekannt / andere App / keine Ausnahmen → zählt.
+        assertFalse(ForegroundRule.isUncounted(null, "com.duolingo", system, un, "x"))
+        assertFalse(ForegroundRule.isUncounted("com.game", "com.duolingo", system, un, "x"))
+        assertFalse(ForegroundRule.isUncounted("com.duolingo", null, system, emptyList(), "x"))
+        assertFalse(ForegroundRule.isUncounted("own.app", null, system, listOf("own.app"), "own.app"))
+    }
+
+    @Test fun configReadsUncountedApps() {
+        val c = LockConfig.fromJson(org.json.JSONObject().put("uncountedApps", org.json.JSONArray(listOf("com.duolingo", " "))))
+        assertEquals(listOf("com.duolingo"), c.uncountedApps)
+        assertEquals(emptyList<String>(), LockConfig.fromJson(org.json.JSONObject()).uncountedApps)
+    }
+
+    @Test fun exemptTimeDoesNotCountAndResetsNextDay() {
+        val st = RuntimeState()
+        val d = java.time.LocalDate.of(2026, 11, 21)
+        st.addUsage(d, 1_000, 120)
+        st.addExempt(d, 600)
+        assertEquals(2, st.usageMinutes(d))
+        assertEquals(10, st.exemptMinutes(d))
+        val back = RuntimeState.fromJson(st.toJson())
+        assertEquals(10, back.exemptMinutes(d))
+        st.rollDay(d.plusDays(1))
+        assertEquals(0, st.exemptMinutes(d.plusDays(1)))
+    }
 }
