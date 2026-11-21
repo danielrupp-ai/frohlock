@@ -67,3 +67,15 @@ Diese Schritte sind **kein Code**, sondern Einrichtung. Ohne sie ist der Schutz 
 - Der Einsatz auf Geräten der **eigenen minderjährigen Kinder** durch die Sorgeberechtigten
   ist zulässig. Auf Geräten Dritter/Erwachsener wäre eine heimliche Überwachung rechtlich
   heikel – nicht der Zweck dieser Software.
+
+## Programm-Ausnahme (Windows 0.31.0) – Grenzen
+
+Die Ausnahme (z. B. „Evoluzzer auch in der Sperre“) öffnet bewusst ein Programm. Ehrlich:
+
+- Das Programm liegt im Benutzerordner des Kindes (beschreibbar). Schutz ist die **Prüfsumme** der Programmdatei –
+  ohne hinterlegte Prüfsumme reicht ein umbenanntes Programm.
+- Evoluzzer ist die allgemeine Godot-Laufzeit + Spielpaket (`.pck`) daneben. Startparameter, die ein anderes Paket
+  laden, werden abgelehnt – ein **ausgetauschtes `.pck` neben der Programmdatei** erkennt FrohLock aber nicht.
+- Kann das Spiel selbst andere Programme/Links öffnen, kommt die Sperre zurück, sobald diese nach vorn kommen.
+- „Zählt nicht“ gilt, solange das Programm das Vordergrundfenster ist – was auf einem zweiten Bildschirm daneben
+  läuft (z. B. ein Video ohne Fokus), wird in dieser Zeit nicht gezählt.

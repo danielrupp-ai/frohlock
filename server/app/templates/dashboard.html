@@ -24,6 +24,8 @@
         {% else %}
         {{ d["usage_today"] or 0 }} min{% if d["budget_minutes"] and d["budget_minutes"] > 0 %} / {{ d["budget_minutes"] }}{% endif %}
         {% endif %}
+        {% set ex = exempt_by_dev.get(d["id"]) %}
+        {% if ex %}<br><span style="color:#69f0ae">🎮 {{ ex.label }} (zählt nicht)</span>{% endif %}
       </td>
       <td class="muted">{{ d["app_version"] or "–" }}</td>
       <td class="muted">

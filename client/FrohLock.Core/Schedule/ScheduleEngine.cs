@@ -23,7 +23,7 @@ public sealed class ScheduleEngine
             string alt = trustedTimeAge == TimeSpan.MaxValue
                 ? "noch nie synchronisiert"
                 : $"{(long)Math.Min(trustedTimeAge.TotalMinutes, 9_999_999)} min";
-            return LockDecision.Locked($"Vertrauenszeit zu alt ({alt}) – Fail-Secure");
+            return LockDecision.Locked($"Vertrauenszeit zu alt ({alt}) – Fail-Secure", LockKind.FailSecure);
         }
 
         // 2) Aktive Entsperrung hat Vorrang, aber nur wenn nicht ohnehin sperrfrei.
@@ -36,7 +36,7 @@ public sealed class ScheduleEngine
 
         // 3) Sperrfenster (Kernfunktion).
         if (IsWithinAnyWindow(localNow, out var win))
-            return LockDecision.Locked($"Sperrfenster {Fmt(win!.StartMinute)}–{Fmt(win.EndMinute)}");
+            return LockDecision.Locked($"Sperrfenster {Fmt(win!.StartMinute)}–{Fmt(win.EndMinute)}", LockKind.Schedule);
 
         return LockDecision.Unlocked("Außerhalb aller Sperrfenster");
     }

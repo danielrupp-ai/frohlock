@@ -15,8 +15,11 @@ internal static class ScreenCover
     /// Zieht das Fenster auf die volle Fläche aller Monitore nach.
     /// Gibt einen Befund zurück, wenn es vorher NICHT alles abgedeckt hat (sonst null).
     /// </summary>
-    public static string? Ensure(IntPtr hwnd)
+    /// <param name="insertAfter">Z-Reihenfolge: Standard = immer im Vordergrund. Beim Spielen des geprüften
+    /// Ausnahme-Programms das Fenster des Spiels – die Sperre liegt dann direkt DAHINTER.</param>
+    public static string? Ensure(IntPtr hwnd, IntPtr insertAfter = default)
     {
+        var after = insertAfter == IntPtr.Zero ? HWND_TOPMOST : insertAfter;
         var monitors = Monitors();
         var virt = new PixelRect(
             GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
@@ -30,12 +33,12 @@ internal static class ScreenCover
         var uncovered = CoverageRules.UncoveredMonitors(monitors, current);
         if (uncovered.Count == 0 && !iconic)
         {
-            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(hwnd, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             return null;
         }
 
         if (iconic) ShowWindow(hwnd, SW_RESTORE);
-        SetWindowPos(hwnd, HWND_TOPMOST, virt.Left, virt.Top, virt.Width, virt.Height,
+        SetWindowPos(hwnd, after, virt.Left, virt.Top, virt.Width, virt.Height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
         return (iconic ? "Sperrbildschirm war minimiert" : "Sperrbildschirm deckte nicht alles ab")
@@ -87,7 +90,9 @@ internal static class ScreenCover
     /// Liegt an einem Stichpunkt eines Monitors ein fremdes Fenster über uns, oder hat ein fremdes
     /// Fenster den Vordergrund (Tastatur)? Prüft Mitte, Ecken und Kantenmitten jedes Monitors.
     /// </summary>
-    public static ForeignWindow? FindForeign(IntPtr ownHwnd)
+    /// <param name="allowedPids">Vom Dienst geprüfte Ausnahme-Prozesse (Evoluzzer) – zählen nicht als fremd.</param>
+    /// <param name="ignoreShell">Beim Spielen liegt die Sperre nicht mehr ganz oben – die Taskleiste darüber ist dann normal.</param>
+    public static ForeignWindow? FindForeign(IntPtr ownHwnd, ICollection<int>? allowedPids = null, bool ignoreShell = false)
     {
         int ownPid = Environment.ProcessId;
         foreach (var m in Monitors())
@@ -100,14 +105,17 @@ internal static class ScreenCover
                 if (h == ownHwnd || h == IntPtr.Zero) continue;
                 GetWindowThreadProcessId(h, out uint pid);
                 if (pid == ownPid) continue;
-                return Describe(h, pid, $"lag bei {x},{y} über der Sperre");
+                if (allowedPids is not null && allowedPids.Contains((int)pid)) continue;
+                var found = Describe(h, pid, $"lag bei {x},{y} über der Sperre");
+                if (ignoreShell && found.Shell) continue;
+                return found;
             }
         }
         var fg = GetForegroundWindow();
         if (fg != IntPtr.Zero && fg != ownHwnd)
         {
             GetWindowThreadProcessId(fg, out uint pid);
-            if (pid != ownPid && pid != 0)
+            if (pid != ownPid && pid != 0 && !(allowedPids is not null && allowedPids.Contains((int)pid)))
             {
                 var d = Describe(fg, pid, "hatte den Vordergrund (Tastatur)");
                 // Desktop/Taskleiste im Vordergrund sind kein Umgehungsweg – nur Programme.
@@ -140,6 +148,49 @@ internal static class ScreenCover
     }
 
     public static bool IsForeground(IntPtr hwnd) => hwnd != IntPtr.Zero && GetForegroundWindow() == hwnd;
+
+    public static IntPtr ForegroundWindow() => GetForegroundWindow();
+
+    /// <summary>Prozess-Kennung eines Fensters (0 = unbekannt).</summary>
+    public static int PidOf(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return 0;
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        return (int)pid;
+    }
+
+    /// <summary>Prozess des Vordergrundfensters – 0, wenn keins oder unser eigenes (Sperrbildschirm, Anzeige).</summary>
+    public static int ForegroundPidExceptOwn()
+    {
+        int pid = PidOf(GetForegroundWindow());
+        return pid == Environment.ProcessId ? 0 : pid;
+    }
+
+    public static bool IsMinimized(IntPtr hwnd) => hwnd != IntPtr.Zero && IsIconic(hwnd);
+
+    /// <summary>Sperre direkt HINTER das Spiel legen (nicht mehr immer im Vordergrund), ohne sie zu aktivieren.</summary>
+    public static void PlaceBelow(IntPtr hwnd, IntPtr above)
+    {
+        if (hwnd == IntPtr.Zero || above == IntPtr.Zero) return;
+        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        SetWindowPos(hwnd, above, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
+    /// <summary>Fenster eines (geprüften) Programms nach vorn holen – geht, solange die Sperre selbst vorn ist.</summary>
+    public static void BringToFront(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+    }
+
+    public delegate void WinEventDelegate(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003, EVENT_SYSTEM_MINIMIZESTART = 0x0016;
+
+    /// <summary>Windows meldet jeden Vordergrund-Wechsel sofort (außerhalb des Prozesses, im UI-Thread).</summary>
+    public static IntPtr HookWinEvent(uint evt, WinEventDelegate callback)
+        => SetWinEventHook(evt, evt, IntPtr.Zero, callback, 0, 0, WINEVENT_OUTOFCONTEXT);
 
     /// <summary>Fremdes Fenster aus dem Weg: minimieren (nicht beenden). Windows-Oberfläche bleibt unangetastet.</summary>
     public static bool Minimize(ForeignWindow w)
@@ -181,6 +232,8 @@ internal static class ScreenCover
 
     private const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79;
     private static readonly IntPtr HWND_TOPMOST = new(-1);
+    private static readonly IntPtr HWND_NOTOPMOST = new(-2);
+    private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
     private const int SW_RESTORE = 9;
     private const int GWL_EXSTYLE = -20;
@@ -229,4 +282,6 @@ internal static class ScreenCover
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr hmod, WinEventDelegate proc, uint pid, uint thread, uint flags);
 }

@@ -131,14 +131,11 @@ public sealed class EnforcementWorker : BackgroundService
                 // Tages-Nutzung zählen: nur wenn Kind angemeldet, Gerät nutzbar UND der Bildschirm
                 // wirklich an ist (zugeklappt / Bildschirm aus / Windows gesperrt zählt NICHT).
                 // Den Bildschirmzustand meldet der Agent; schweigt er (Standby), zählt ohnehin nichts.
-                if (UsageGate.ShouldCount(
-                        SessionLauncher.HasActiveUserSession(),
-                        _controller.AgentSilence < TimeSpan.FromSeconds(45),
-                        _controller.Decide().IsLocked,
-                        _controller.ScreenActive))
-                {
-                    _controller.AccrueUsage(TickSeconds);
-                }
+                // Ist das vom Dienst geprüfte Ausnahme-Programm (Evoluzzer) vorn, wird die Zeit getrennt
+                // als „zählt nicht“ mitgeführt (AppExceptionPolicy.ClassifyTick).
+                _controller.AccrueTick(TickSeconds,
+                    SessionLauncher.HasActiveUserSession(),
+                    _controller.AgentSilence < TimeSpan.FromSeconds(45));
                 if ((now - _lastUsageSaveUtc) > TimeSpan.FromSeconds(30))
                 {
                     _lastUsageSaveUtc = now;
@@ -407,7 +404,7 @@ public sealed class EnforcementWorker : BackgroundService
                 _controller.RemoteUnlock(cmd.UnlockMinutes ?? ctx.UnlockGrace, "Fern-Befehl");
                 break;
             case CommandType.Lock:
-                _controller.ForceLock("Fern-Befehl");
+                _controller.ForceLock("Fern-Befehl", byParents: true);
                 break;
             case CommandType.UpdateConfig:
             case CommandType.ResetPin:

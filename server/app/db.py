@@ -121,6 +121,10 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN child TEXT",
     # Nachricht ans Kind erst ab einem Zeitpunkt zustellen (z. B. Geburtstag um 0 Uhr).
     "ALTER TABLE commands ADD COLUMN not_before INTEGER DEFAULT 0",
+    # Ausnahme für ein Programm (Windows 0.31.0, 21.11.2026): Minuten, die nicht zählen (z. B. Evoluzzer).
+    "ALTER TABLE devices ADD COLUMN exempt_minutes INTEGER DEFAULT 0",
+    "ALTER TABLE devices ADD COLUMN exempt_detail TEXT",
+    "ALTER TABLE usage_daily ADD COLUMN exempt_minutes INTEGER DEFAULT 0",
 ]
 
 

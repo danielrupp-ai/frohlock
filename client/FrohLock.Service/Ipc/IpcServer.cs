@@ -86,7 +86,10 @@ public sealed class IpcServer : BackgroundService
             if (line is not null)
             {
                 var msg = Json.Deserialize<IpcMessage>(line) ?? new IpcMessage();
-                var reply = Handle(msg);
+                // Wer ist am anderen Ende? Nur der echte Sperrbildschirm (Program Files) darf den Vordergrund
+                // melden, der das Zählen beeinflusst (Ausnahme-Programm).
+                int clientPid = msg.ReportsForeground ? Interop.ProcessInfo.PipeClientPid(server.SafePipeHandle) : -1;
+                var reply = Handle(msg, clientPid);
                 await writer.WriteLineAsync(Json.Serialize(reply).AsMemory(), ct).ConfigureAwait(false);
                 await writer.FlushAsync(ct).ConfigureAwait(false);
                 try { server.WaitForPipeDrain(); } catch { } // sicherstellen, dass der Agent die Antwort liest
@@ -102,16 +105,24 @@ public sealed class IpcServer : BackgroundService
         }
     }
 
-    private IpcMessage Handle(IpcMessage msg)
+    private IpcMessage Handle(IpcMessage msg, int clientPid)
     {
         switch (msg.Kind)
         {
             case IpcKind.GetStatus:
             {
+                // Ausnahme-Programm: zuerst (prüft Vordergrund + Installation), danach den Sperrzustand.
+                bool trusted = clientPid > 0 && _controller.IsGenuineAgent(clientPid);
+                var ex = _controller.GetExceptionView(msg.ForegroundPid, trusted, msg.LocalAppData);
                 var d = _controller.Decide();
                 var baseUrl = _controller.Config?.ServerBaseUrl ?? "";
                 return new IpcMessage
                 {
+                    ExceptionAllowed = ex.Allowed && d.IsLocked,
+                    ExceptionName = ex.Name,
+                    ExceptionInstalled = ex.Installed,
+                    ExceptionForegroundPid = ex.ForegroundPid,
+                    ExceptionUncounted = ex.Uncounted,
                     Kind = IpcKind.StatusReply,
                     Locked = d.IsLocked,
                     Reason = d.Reason,
@@ -145,8 +156,29 @@ public sealed class IpcServer : BackgroundService
                 _controller.ReportCoverageProblem(msg.Reason, msg.Alert, msg.Escalate);
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
             case IpcKind.RequestLock:
-                _controller.ForceLock(msg.Reason);
+                _controller.ForceLock(msg.Reason, byParents: false);   // Manipulation: streng, ohne Ausnahme
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = true };
+            case IpcKind.CheckProgram:
+            {
+                // Schnelle Rückfrage bei Vordergrund-Wechsel: nur Prüfung, keine Installationssuche.
+                bool trusted = clientPid > 0 && _controller.IsGenuineAgent(clientPid);
+                var ex = _controller.GetExceptionView(msg.ForegroundPid, trusted, msg.LocalAppData, checkInstalled: false);
+                return new IpcMessage
+                {
+                    Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked,
+                    Success = ex.ForegroundPid > 0 && ex.ForegroundPid == msg.ForegroundPid,
+                    ExceptionForegroundPid = ex.ForegroundPid, ExceptionUncounted = ex.Uncounted
+                };
+            }
+            case IpcKind.LaunchProgram:
+            {
+                var (ok, path, name) = _controller.GetLaunchPath(msg.LocalAppData);
+                return new IpcMessage
+                {
+                    Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked,
+                    Success = ok, ProgramPath = ok ? path : "", ExceptionName = name
+                };
+            }
             default:
                 return new IpcMessage { Kind = IpcKind.StatusReply, Locked = _controller.Decide().IsLocked };
         }

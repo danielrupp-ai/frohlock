@@ -235,8 +235,10 @@ def dashboard(request: Request):
     for d in devices:
         if d["child"]:
             shared_by_dev[d["id"]] = shared.summary(d["child"], nb.strftime("%Y-%m-%d"), nb.weekday())
+    exempt_by_dev = {d["id"]: exempt_today(d, nb.strftime("%Y-%m-%d")) for d in devices}
     return templates.TemplateResponse("dashboard.html", {
         "request": request, "devices": devices, "codes": codes, "now": now, "shared_by_dev": shared_by_dev,
+        "exempt_by_dev": exempt_by_dev,
         "penalties": penalties, "timeout_minutes": TIMEOUT_MINUTES, "lock_states": lock_states,
         "flash": request.query_params.get("ok", ""),
     })
@@ -367,6 +369,7 @@ def device_detail(request: Request, device_id: str):
         "allowed_extra": ", ".join(p for p in allowed if p not in known_pkgs),
         **_app_exception_context(draft, android.device_info(dev["device_info"] if "device_info" in keys else None),
                                  dev["app_version"] if "app_version" in keys else ""),
+        **_program_exception_context(draft, dev, today_key),
         "android_info": android.device_info(dev["device_info"] if "device_info" in keys else None),
         "android_update": android.apk_version(),
         "other_devices": others,
@@ -706,6 +709,81 @@ async def set_app_exceptions(request: Request, device_id: str):
     db.audit(request.session["admin_user"], "app-exceptions", device_id,
              ", ".join(f"{e['package']}={e['mode']}" for e in keep) + f" v{v}")
     return RedirectResponse(f"/admin/devices/{device_id}?ok=ausnahme#ausnahmen", status_code=303)
+
+
+def exempt_today(dev, today_key: str) -> dict | None:
+    """Windows: „Evoluzzer: 45 Min (zählt nicht)" für heute – None, wenn nichts gemeldet."""
+    keys = dev.keys()
+    if "exempt_minutes" not in keys or not dev["exempt_minutes"]:
+        return None
+    if ("usage_day" in keys and dev["usage_day"]) and dev["usage_day"] != today_key:
+        return None
+    try:
+        detail = json.loads(dev["exempt_detail"] or "[]") if "exempt_detail" in keys else []
+    except ValueError:
+        detail = []
+    parts = [f"{d.get('name')}: {_fmt_minutes(int(d.get('minutes') or 0))}" for d in detail
+             if isinstance(d, dict) and int(d.get("minutes") or 0) > 0]
+    total = int(dev["exempt_minutes"] or 0)
+    return {"minutes": total, "label": ", ".join(parts) or f"Ausnahme-Programme: {_fmt_minutes(total)}"}
+
+
+def _program_exception_context(draft: dict, dev, today_key: str) -> dict:
+    """Karte „Ausnahme für ein Programm" (Windows): gespeicherte Ausnahmen, Arten, Versions-Hinweis, heutige Minuten."""
+    from .api import _version_older
+    keys = dev.keys()
+    ver = (dev["app_version"] if "app_version" in keys else "") or ""
+    return {
+        "program_exceptions": configbuilder.program_exceptions(draft),
+        "program_exception_modes": [{"key": k, "title": t, "text": x}
+                                    for k, (t, x) in configbuilder.PROGRAM_EXCEPTION_MODES.items()],
+        "program_exception_min": configbuilder.PROGRAM_EXCEPTION_MIN_WINDOWS,
+        "program_exception_supported": bool(ver) and not _version_older(ver, configbuilder.PROGRAM_EXCEPTION_MIN_WINDOWS),
+        "evoluzzer_preset": configbuilder.EVOLUZZER_PRESET,
+        "exempt_today": exempt_today(dev, today_key),
+    }
+
+
+@router.post("/admin/devices/{device_id}/program-exceptions")
+async def set_program_exceptions(request: Request, device_id: str):
+    """Windows: Ausnahme für ein Programm (z. B. Evoluzzer) – anlegen, Art/Prüfsummen ändern, entfernen."""
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
+    if not db.query_one("SELECT id FROM devices WHERE id=?", (device_id,)):
+        return RedirectResponse("/admin", status_code=303)
+    form = await request.form()
+    draft = _load_draft(device_id)
+    rows = configbuilder.program_exceptions(draft)
+    keep = []
+    for i, e in enumerate(rows):
+        if form.get(f"del_{i}"):
+            continue
+        mode = str(form.get(f"mode_{i}", e["mode"]))
+        e["mode"] = mode if mode in configbuilder.PROGRAM_EXCEPTION_MODES else e["mode"]
+        if f"sha_{i}" in form:
+            sha, bad = configbuilder.parse_sha_list(form.get(f"sha_{i}"))
+            if bad:
+                return RedirectResponse(f"/admin/devices/{device_id}?ok=pruefsummefalsch#programme", status_code=303)
+            e["sha256"] = sha[:10]
+        keep.append(e)
+    new_exe = str(form.get("new_exe", "") or "").strip()
+    if new_exe:
+        if not configbuilder.EXE_RE.fullmatch(new_exe):
+            return RedirectResponse(f"/admin/devices/{device_id}?ok=programmfalsch#programme", status_code=303)
+        sha, bad = configbuilder.parse_sha_list(form.get("new_sha", ""))
+        if bad:
+            return RedirectResponse(f"/admin/devices/{device_id}?ok=pruefsummefalsch#programme", status_code=303)
+        mode = str(form.get("new_mode", "offen"))
+        entry = {"name": (str(form.get("new_name", "") or "").strip() or new_exe[:-4])[:60], "exe": new_exe,
+                 "sha256": sha[:10], "mode": mode if mode in configbuilder.PROGRAM_EXCEPTION_MODES else "offen"}
+        # Gleiche Programmdatei schon da -> ersetzen statt doppelt.
+        keep = [e for e in keep if e["exe"].lower() != new_exe.lower()] + [entry]
+    draft["programExceptions"] = keep
+    v = configbuilder.save_draft(device_id, draft)
+    db.audit(request.session["admin_user"], "program-exceptions", device_id,
+             (", ".join(f"{e['name']} ({e['exe']})={e['mode']}, {len(e['sha256'])} Prüfsumme(n)" for e in keep) or "keine")
+             + f" v{v}")
+    return RedirectResponse(f"/admin/devices/{device_id}?ok=programm#programme", status_code=303)
 
 
 # ---------------- iPhone ----------------

@@ -52,6 +52,73 @@ def _apply_app_exceptions(draft: dict) -> tuple[list[str], list[str]]:
     return allowed, uncounted
 
 
+# ---- Ausnahme für ein Programm (Windows, ab FrohLock 0.31.0) ----
+# Daniel 21.11.2026: „Renat darf, wenn seine Zeit rum ist, nur Evoluzzer spielen – Evoluzzer so lange er will."
+# Gleiche Arten wie bei Android, Texte auf den Laptop zugeschnitten. Im Entwurf unter „programExceptions"
+# (getrennt von den Android-„appExceptions", damit „Einstellungen übernehmen" zwischen Handy und Laptop nichts vermischt);
+# in der signierten Windows-Config heißt das Feld „appExceptions" (FrohLock.Core.Models.AppException).
+PROGRAM_EXCEPTION_MIN_WINDOWS = "0.31.0"
+PROGRAM_EXCEPTION_MODES = {
+    "offen": ("Noch nicht festgelegt",
+              "Das Programm ist vorgemerkt, am Laptop ändert sich noch nichts."),
+    "sperre": ("Auch während der Sperre erlaubt",
+               "Ist der Laptop gesperrt (Schlafenszeit, Tageslimit, „Sofort sperren“), zeigt der Sperrbildschirm einen Knopf "
+               "zum Starten. Nur dieses Programm ist dann erreichbar, alles andere bleibt gesperrt. Außerhalb der Sperre zählt "
+               "es ganz normal zur Bildschirmzeit."),
+    "zeit": ("Zählt nicht zur Bildschirmzeit",
+             "Außerhalb der Sperre frei nutzbar, das Tageslimit sinkt dabei nicht. In der Sperre bleibt es gesperrt."),
+    "beides": ("Immer frei – auch in der Sperre, und zählt nie",
+               "Das Programm ist jederzeit spielbar (auch wenn die Zeit rum ist) und kostet nie Bildschirmzeit."),
+}
+EXE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.\-]{0,78}\.exe", re.IGNORECASE)
+SHA256_RE = re.compile(r"[0-9a-f]{64}")
+# Knopf „Evoluzzer eintragen" (Daniels Spiel; Programmdatei = unveränderte Godot-4.7.2-Laufzeit).
+EVOLUZZER_PRESET = {
+    "name": "Evoluzzer",
+    "exe": "Evoluzzer.exe",
+    "sha256": ["d34d36f3be1a6c49c56525ae86469b92e4f417ddf0b43cf00dd80c385c4b0562"],
+    "mode": "beides",
+}
+
+
+def parse_sha_list(raw) -> tuple[list[str], list[str]]:
+    """Text/Liste mit Prüfsummen -> (gültige, ungültige). Trennzeichen: Komma, Leerzeichen, Zeilenumbruch."""
+    items = raw if isinstance(raw, list) else re.split(r"[\s,;]+", str(raw or ""))
+    ok, bad = [], []
+    for it in items:
+        t = str(it or "").strip().lower()
+        if not t:
+            continue
+        if SHA256_RE.fullmatch(t):
+            if t not in ok:
+                ok.append(t)
+        else:
+            bad.append(t)
+    return ok, bad
+
+
+def program_exceptions(draft: dict) -> list[dict]:
+    """Gespeicherte Programm-Ausnahmen bereinigt: [{name, exe, sha256, mode}]."""
+    out, seen = [], set()
+    for e in draft.get("programExceptions") or []:
+        if not isinstance(e, dict):
+            continue
+        exe = str(e.get("exe", "")).strip()
+        if not EXE_RE.fullmatch(exe) or exe.lower() in seen:
+            continue
+        seen.add(exe.lower())
+        mode = e.get("mode") if e.get("mode") in PROGRAM_EXCEPTION_MODES else "offen"
+        sha, _ = parse_sha_list(e.get("sha256") or [])
+        out.append({"name": (str(e.get("name") or "").strip() or exe[:-4])[:60], "exe": exe,
+                    "sha256": sha[:10], "mode": mode})
+    return out
+
+
+def _platform(device_id: str) -> str:
+    row = db.query_one("SELECT platform FROM devices WHERE id=?", (device_id,))
+    return ((row["platform"] if row else "") or "windows").lower()
+
+
 KNOWN_MESSENGERS = [
     ("Telegram", ["org.telegram.messenger", "org.telegram.messenger.web"]),
     ("Signal", ["org.thoughtcrime.securesms"]),
@@ -101,7 +168,7 @@ def build_full_config(device_id: str) -> dict | None:
         draft["dailyBudgetByWeekday"] = child["dailyBudgetByWeekday"]
 
     allowed_apps, uncounted_apps = _apply_app_exceptions(draft)
-    return {
+    full = {
         "configVersion": version,
         "deviceId": device_id,
         "windows": draft.get("windows", []),
@@ -120,6 +187,11 @@ def build_full_config(device_id: str) -> dict | None:
         # Ab Android 1.0.12: Zeit in diesen Apps zählt nicht aufs Tageslimit (ältere Versionen ignorieren das Feld).
         "uncountedApps": uncounted_apps,
     }
+    # Windows: Programm-Ausnahmen (ab 0.31.0 wirksam; ältere Windows-Clients überspringen unbekannte Felder –
+    # System.Text.Json ignoriert sie, die Signatur gilt über die Bytes). Android/iOS bekommen das Feld nicht.
+    if _platform(device_id) == "windows":
+        full["appExceptions"] = program_exceptions(draft)
+    return full
 
 
 def bump_version(device_id: str) -> int:
@@ -145,7 +217,7 @@ def current_version(device_id: str) -> int:
 # Was beim Übernehmen von einem anderen Gerät mitkommt (Zeitplan, Limits, PIN, Entsperrdauer).
 _COPY_KEYS = ("windows", "dailyBudgetMinutes", "dailyBudgetByWeekday", "unlockGraceMinutes",
               "pinHash", "pinSalt", "pinIterations", "maxTrustedTimeStalenessMinutes", "alwaysAllowedApps",
-              "appExceptions")
+              "appExceptions", "programExceptions")
 
 
 def copy_settings(source_id: str, target_id: str) -> str | None:

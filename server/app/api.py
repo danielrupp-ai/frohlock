@@ -137,6 +137,11 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
                  None if hb.lockTaskActive is None else int(hb.lockTaskActive),
                  json.dumps(info), hb.relaxedUntilUnix, device_id),
             )
+        if not hb.platform:
+            # Windows: Minuten in Ausnahme-Programmen (zählen nicht) – getrennt, nie in usage_daily.minutes
+            # (sonst flösse die Zeit ins gemeinsame Tageskonto).
+            c.execute("UPDATE devices SET exempt_minutes=?, exempt_detail=? WHERE id=?",
+                      (max(0, int(hb.exemptMinutesToday or 0)), json.dumps(_clean_exempt(hb.exemptPrograms)), device_id))
         alerts.on_heartbeat_seen(c, device_id, now)
         new_lines = _remember_gap_alerts(c, device_id, hb.recentAudit)
         alerts.on_new_lines(c, device_id, new_lines, now)
@@ -152,7 +157,24 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
                    budget=excluded.budget""",
             (device_id, day, hb.usageMinutesToday, segs, hb.dailyBudgetMinutes),
         )
+        if not hb.platform and hb.exemptMinutesToday:
+            c.execute("UPDATE usage_daily SET exempt_minutes=MAX(COALESCE(exempt_minutes, 0), ?) WHERE device_id=? AND day=?",
+                      (max(0, int(hb.exemptMinutesToday)), device_id, day))
     return {"ok": True}
+
+
+def _clean_exempt(items: list) -> list[dict]:
+    """[{name, minutes}] aus dem Heartbeat – gekürzt und geprüft (kommt vom Gerät)."""
+    out = []
+    for it in (items or [])[:10]:
+        if not isinstance(it, dict):
+            continue
+        try:
+            minutes = max(0, min(24 * 60, int(it.get("minutes") or 0)))
+        except (TypeError, ValueError):
+            continue
+        out.append({"name": str(it.get("name") or "Programm")[:60], "minutes": minutes})
+    return out
 
 
 def _remember_gap_alerts(c, device_id: str, recent_audit: str) -> list[str]:

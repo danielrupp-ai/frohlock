@@ -81,6 +81,36 @@
                  Text="Jetzt ist Schlafenszeit. Der Laptop macht auch ein Nickerchen. 💤"
                  FontSize="20" Opacity="0.92" HorizontalAlignment="Center"
                  TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,6"/>
+      <!-- Ausnahme-Programm (z. B. Evoluzzer): auch in dieser Sperre spielbar (nur sichtbar, wenn erlaubt) -->
+      <StackPanel x:Name="PlayPanel" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,8,0,10">
+        <Button x:Name="PlayButton" Click="PlayButton_Click" Cursor="Hand" Foreground="#3A2600"
+                FontSize="26" FontWeight="Bold" Padding="34,14" BorderThickness="0" HorizontalAlignment="Center">
+          <Button.Template>
+            <ControlTemplate TargetType="Button">
+              <Border x:Name="Bd" CornerRadius="26" Padding="{TemplateBinding Padding}">
+                <Border.Background>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#FFE082" Offset="0"/>
+                    <GradientStop Color="#FFB74D" Offset="1"/>
+                  </LinearGradientBrush>
+                </Border.Background>
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Bd" Property="Opacity" Value="0.9"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter TargetName="Bd" Property="Opacity" Value="0.55"/>
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Button.Template>
+          <TextBlock x:Name="PlayButtonText" Text="🎮 Evoluzzer spielen"/>
+        </Button>
+        <TextBlock x:Name="PlayInfo" Text="" FontSize="15" Opacity="0.85" HorizontalAlignment="Center"
+                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0" MaxWidth="560"/>
+      </StackPanel>
       <TextBlock x:Name="ClockText" Text="" FontSize="15" Opacity="0.6" HorizontalAlignment="Center"/>
 
       <!-- Tageslimit: von wann bis wann heute genutzt (Zeitleiste) -->

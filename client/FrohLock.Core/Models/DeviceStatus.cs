@@ -33,6 +33,11 @@ public sealed class DeviceStatus
     /// <summary>Sekunden seit letztem Overlay-Agent-Lebenszeichen; -1 = nie/kein Agent (Diagnose).</summary>
     public int AgentAliveAgeSeconds { get; set; } = -1;
 
+    /// <summary>Heute in Ausnahme-Programmen verbrachte Minuten, die NICHT zählen (z. B. Evoluzzer).</summary>
+    public int ExemptMinutesToday { get; set; }
+    /// <summary>Aufteilung je Programm („Evoluzzer 45 Min“).</summary>
+    public List<ExemptProgramView> ExemptPrograms { get; set; } = new();
+
     /// <summary>Letzte Ereignis-Protokollzeilen des Geräts (Diagnose, serverseitig einsehbar).</summary>
     public string RecentAudit { get; set; } = "";
 }

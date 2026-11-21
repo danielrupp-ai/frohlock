@@ -16,7 +16,9 @@ public enum IpcKind
     AgentAlive,       // Agent -> Dienst: Heartbeat (Watchdog)
     RequestLock,      // Agent -> Dienst: erzwinge Sperre (z. B. Overlay ausgehebelt)
     AgentCrashReport, // Agent -> Dienst: letzter Absturz des Overlays (Reason = Fehlertext), fürs Protokoll
-    BypassReport      // Agent -> Dienst: Sperrbildschirm deckte nicht alles ab (Reason = Befund), fürs Protokoll
+    BypassReport,     // Agent -> Dienst: Sperrbildschirm deckte nicht alles ab (Reason = Befund), fürs Protokoll
+    CheckProgram,     // Agent -> Dienst: ist Prozess ForegroundPid das geprüfte Ausnahme-Programm (und jetzt erlaubt)?
+    LaunchProgram     // Agent -> Dienst: geprüften Pfad des Ausnahme-Programms holen (nur in passender Sperre)
 }
 
 public sealed class IpcMessage
@@ -65,4 +67,25 @@ public sealed class IpcMessage
     public bool Alert { get; set; }
     /// <summary>Mit BypassReport: Fremdfenster kommt trotz Minimieren immer wieder -> Dienst soll die Sitzung trennen.</summary>
     public bool Escalate { get; set; }
+
+    // ---- Ausnahme-Programm (ab 0.31.0) ----
+    // Agent -> Dienst (GetStatus/CheckProgram): Prozess-Kennung des Vordergrundfensters (0 = eigenes/keins).
+    // Der Agent meldet NUR, welches Fenster vorn ist – Pfad und Prüfsumme prüft der Dienst selbst.
+    public int ForegroundPid { get; set; }
+    /// <summary>true = diese Meldung ist die Vordergrund-Meldung des Sperrbildschirms (nicht die Status-Übersicht).</summary>
+    public bool ReportsForeground { get; set; }
+    /// <summary>Agent -> Dienst (LaunchProgram/GetStatus): %LOCALAPPDATA% des Kindes – nur Suchort, geprüft wird die Datei.</summary>
+    public string LocalAppData { get; set; } = "";
+
+    /// <summary>Dienst -> Agent: Die Sperre erlaubt ein Ausnahme-Programm („🎮 … spielen“ zeigen).</summary>
+    public bool ExceptionAllowed { get; set; }
+    public string ExceptionName { get; set; } = "";
+    /// <summary>Dienst -> Agent: Programm gefunden und Prüfsumme stimmt.</summary>
+    public bool ExceptionInstalled { get; set; }
+    /// <summary>Dienst -> Agent: geprüfte Prozess-Kennung, die JETZT im Vordergrund sein darf (0 = keine).</summary>
+    public int ExceptionForegroundPid { get; set; }
+    /// <summary>Dienst -> Agent: das Vordergrund-Programm zählt gerade nicht (Zeit-Anzeige „🎮 … – zählt nicht“).</summary>
+    public bool ExceptionUncounted { get; set; }
+    /// <summary>Dienst -> Agent (LaunchProgram): geprüfter Pfad zum Starten.</summary>
+    public string ProgramPath { get; set; } = "";
 }

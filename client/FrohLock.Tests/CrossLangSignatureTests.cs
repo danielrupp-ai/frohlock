@@ -31,6 +31,8 @@ public class CrossLangSignatureTests
         Assert.Equal("xlang-test", cfg.DeviceId);
         Assert.Single(cfg.Windows);
         Assert.Equal(1260, cfg.Windows[0].StartMinute);
+        // Ältere Server-Config (ohne „appExceptions“): lädt weiter, keine Ausnahme wirksam.
+        Assert.Empty(FrohLock.Core.Schedule.AppExceptionPolicy.Effective(cfg));
 
         var cmdEnv = Json.Deserialize<SignedEnvelope>(doc.GetProperty("command").GetRawText())!;
         var cmd = verifier.OpenAs<DeviceCommand>(cmdEnv);

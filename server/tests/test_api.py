@@ -803,3 +803,97 @@ def test_android_app_exception_open_then_defined(client):
     client.post(f"/admin/devices/{did}/app-exceptions", data={"del_0": "on"})
     c = cfg()
     assert c["uncountedApps"] == [] and "com.duolingo" not in c["alwaysAllowedApps"]
+
+
+EVO_SHA = "d34d36f3be1a6c49c56525ae86469b92e4f417ddf0b43cf00dd80c385c4b0562"
+
+
+def test_windows_program_exception_evoluzzer(client):
+    """21.11.2026, Daniel: „Renat darf, wenn seine Zeit rum ist, nur Evoluzzer spielen – so lange er will."
+    Windows-Karte „Ausnahme für ein Programm" -> signierte Config „appExceptions" (nur Windows), Heartbeat-Minuten,
+    die NICHT ins (gemeinsame) Tageskonto fließen, Anzeige im Admin, Audit."""
+    import json
+    import datetime
+    from zoneinfo import ZoneInfo
+    import app.db as dbmod
+    with open(PUB_PATH, "rb") as fh:
+        pub = load_pem_public_key(fh.read())
+    _admin_login(client)
+    laptop, la = _pair(client, "Laptop renat")
+    handy, ha = _pair(client, "renat handy")
+    client.post(f"/admin/devices/{laptop}/child", data={"child": "Renat"})
+    client.post(f"/admin/devices/{handy}/child", data={"child": "Renat"})
+    day = datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d")
+    client.post(f"/devices/{handy}/heartbeat", headers=ha,
+                json={"deviceId": handy, "appVersion": "1.0.12", "platform": "android", "usageMinutesToday": 30, "usageDay": day})
+
+    def cfg(did, auth):
+        env = client.get(f"/devices/{did}/config?have=0", headers=auth).json()
+        return json.loads(_verify(pub, env["payloadBase64"], env["signatureBase64"]))
+
+    # Ohne Ausnahme: Windows bekommt eine leere Liste, Android das Feld gar nicht.
+    assert cfg(laptop, la)["appExceptions"] == []
+    assert "appExceptions" not in cfg(handy, ha)
+
+    # Karte nur beim Laptop; Hinweis, solange der Laptop noch 0.30.0 hat.
+    client.post(f"/devices/{laptop}/heartbeat", headers=la,
+                json={"deviceId": laptop, "appVersion": "0.30.0.0", "usageMinutesToday": 50, "usageDay": day})
+    page = client.get(f"/admin/devices/{laptop}").text
+    assert "Ausnahme für ein Programm" in page and "Evoluzzer eintragen" in page and EVO_SHA in page
+    assert "wirkt erst ab FrohLock 0.31.0" in page
+    assert "Ausnahme für ein Programm" not in client.get(f"/admin/devices/{handy}").text
+
+    # Falsche Eingaben -> nichts gespeichert.
+    v0 = configbuilder_version(laptop)
+    r = client.post(f"/admin/devices/{laptop}/program-exceptions", data={"new_exe": "C:\\Spiele\\Evoluzzer.exe"},
+                    follow_redirects=False)
+    assert "ok=programmfalsch" in r.headers["location"]
+    r = client.post(f"/admin/devices/{laptop}/program-exceptions",
+                    data={"new_exe": "Evoluzzer.exe", "new_sha": "1234"}, follow_redirects=False)
+    assert "ok=pruefsummefalsch" in r.headers["location"]
+    assert configbuilder_version(laptop) == v0
+
+    # „Evoluzzer eintragen" + Speichern (so schickt das Formular die vorausgefüllten Felder).
+    r = client.post(f"/admin/devices/{laptop}/program-exceptions", follow_redirects=False,
+                    data={"new_name": "Evoluzzer", "new_exe": "Evoluzzer.exe", "new_sha": EVO_SHA.upper() + "\n",
+                          "new_mode": "beides"})
+    assert r.status_code == 303 and "ok=programm#programme" in r.headers["location"]
+    c = cfg(laptop, la)
+    assert c["appExceptions"] == [{"name": "Evoluzzer", "exe": "Evoluzzer.exe", "sha256": [EVO_SHA], "mode": "beides"}]
+    assert "appExceptions" not in cfg(handy, ha)          # Android-Verhalten unverändert
+    assert cfg(handy, ha)["uncountedApps"] == []
+    audit = dbmod.query("SELECT * FROM audit WHERE device_id=? AND action='program-exceptions'", (laptop,))
+    assert audit and "Evoluzzer (Evoluzzer.exe)=beides, 1 Prüfsumme(n)" in audit[-1]["detail"]
+
+    # Gleiche Datei erneut eintragen ersetzt statt doppelt; Art ändern; Prüfsumme leeren.
+    client.post(f"/admin/devices/{laptop}/program-exceptions",
+                data={"mode_0": "zeit", "sha_0": "", "new_exe": "evoluzzer.exe", "new_mode": "sperre", "new_sha": EVO_SHA})
+    c = cfg(laptop, la)
+    assert len(c["appExceptions"]) == 1 and c["appExceptions"][0]["mode"] == "sperre"
+    client.post(f"/admin/devices/{laptop}/program-exceptions", data={"mode_0": "beides", "sha_0": EVO_SHA})
+    assert cfg(laptop, la)["appExceptions"][0]["mode"] == "beides"
+    page = client.get(f"/admin/devices/{laptop}").text
+    assert 'value="beides" selected' in page
+
+    # Laptop (0.31.0) meldet 45 Min Evoluzzer, die nicht zählen.
+    hb = {"deviceId": laptop, "appVersion": "0.31.0.0", "usageMinutesToday": 50, "usageDay": day, "dailyBudgetMinutes": 60,
+          "exemptMinutesToday": 45, "exemptPrograms": [{"name": "Evoluzzer", "minutes": 45}, "kaputt", {"name": "x", "minutes": "y"}]}
+    assert client.post(f"/devices/{laptop}/heartbeat", headers=la, json=hb).status_code == 200
+    page = client.get(f"/admin/devices/{laptop}").text
+    assert "wirkt erst ab FrohLock 0.31.0" not in page
+    assert "Evoluzzer: 45 Min" in page and "zählt nicht" in page
+    assert "Evoluzzer: 45 Min (zählt nicht)" in client.get("/admin").text
+    row = dbmod.query_one("SELECT minutes, exempt_minutes FROM usage_daily WHERE device_id=? AND day=?", (laptop, day))
+    assert row["minutes"] == 50 and row["exempt_minutes"] == 45
+    # Gemeinsames Tageskonto: das Handy sieht nur die 50 gezählten Minuten des Laptops, nicht die 45 Evoluzzer-Minuten.
+    hc = _shared_cmds(client, pub, handy, ha)
+    assert hc and hc[0]["payload"]["minutes"] == "50"
+
+    # Einstellungen übernehmen auf ein neues Windows-Gerät nimmt die Programm-Ausnahme mit.
+    neu, na = _pair(client, "Laptop neu")
+    client.post(f"/admin/devices/{neu}/copy-from", data={"source_id": laptop})
+    assert cfg(neu, na)["appExceptions"][0]["exe"].lower() == "evoluzzer.exe"   # Groß/Klein egal (Client vergleicht ohne)
+
+    # Entfernen.
+    client.post(f"/admin/devices/{laptop}/program-exceptions", data={"mode_0": "beides", "del_0": "on"})
+    assert cfg(laptop, la)["appExceptions"] == []

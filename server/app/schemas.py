@@ -57,6 +57,9 @@ class HeartbeatIn(BaseModel):
     penaltyCount: int = 0
     agentAliveAgeSeconds: int = -1
     recentAudit: str = ""
+    # Windows ab 0.31.0: Zeit in Ausnahme-Programmen (z. B. Evoluzzer), die NICHT zur Bildschirmzeit zählt.
+    exemptMinutesToday: int = 0
+    exemptPrograms: list = Field(default_factory=list)   # bewusst locker: Müll darf den Heartbeat nie kippen
     # Nur Android:
     platform: str = ""
     deviceOwner: bool | None = None

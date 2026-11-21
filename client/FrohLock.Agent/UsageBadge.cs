@@ -77,16 +77,22 @@ public sealed class UsageBadge : Window
     }
 
     /// <summary>Neuer Stand vom Dienst. used/budget = gemeinsames Tageskonto (alle Geräte des Kindes).</summary>
-    public void Update(int used, int budget)
+    /// <param name="uncountedProgram">Ist gerade ein Ausnahme-Programm vorn, das nicht zählt (z. B. „Evoluzzer“)? Sonst null.</param>
+    public void Update(int used, int budget, string? uncountedProgram = null)
     {
         int rem = Math.Max(0, budget - used);
-        _main.Text = $"⏱ Heute {Fmt(used)} von {Fmt(budget)}";
-        _sub.Text = rem > 0 ? $"noch {Fmt(rem)} übrig" : "Tageszeit aufgebraucht";
+        bool exempt = !string.IsNullOrWhiteSpace(uncountedProgram);
+        _main.Text = exempt ? $"🎮 {uncountedProgram} – zählt nicht" : $"⏱ Heute {Fmt(used)} von {Fmt(budget)}";
+        _sub.Text = exempt
+            ? $"Heute {Fmt(used)} von {Fmt(budget)} · " + (rem > 0 ? $"noch {Fmt(rem)} übrig" : "aufgebraucht")
+            : (rem > 0 ? $"noch {Fmt(rem)} übrig" : "Tageszeit aufgebraucht");
         _frac = budget <= 0 ? 0 : Math.Min(1.0, (double)used / budget);
         _barFill.Background = rem <= 10 ? Brushes.IndianRed : (rem <= 30 ? Brushes.Goldenrod : Brushes.LimeGreen);
-        _card.Background = new SolidColorBrush(rem <= 10
-            ? Color.FromArgb(0xEE, 0x6B, 0x1E, 0x2A)
-            : Color.FromArgb(0xE6, 0x13, 0x29, 0x4B));
+        _card.Background = new SolidColorBrush(exempt
+            ? Color.FromArgb(0xE6, 0x1B, 0x5E, 0x20)
+            : rem <= 10
+                ? Color.FromArgb(0xEE, 0x6B, 0x1E, 0x2A)
+                : Color.FromArgb(0xE6, 0x13, 0x29, 0x4B));
         UpdateBar();
         // Andere „immer oben"-Fenster können uns überdecken -> Topmost alle 30 s frisch setzen.
         if (DateTime.UtcNow - _lastTopmost > TimeSpan.FromSeconds(30))

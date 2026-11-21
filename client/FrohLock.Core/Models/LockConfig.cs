@@ -60,4 +60,11 @@ public sealed class LockConfig
 
     /// <summary>Grundzustand, wenn gar keine Aussage möglich ist.</summary>
     public bool FailSecureLocked { get; set; } = true;
+
+    /// <summary>
+    /// Ausnahme für einzelne Programme (ab 0.31.0), z. B. „Evoluzzer“: auch in der Sperre spielbar und/oder
+    /// zählt nicht zur Bildschirmzeit. Ältere Clients ignorieren das Feld (System.Text.Json überspringt
+    /// unbekannte Felder). Null/leer = keine Ausnahme.
+    /// </summary>
+    public List<AppException>? AppExceptions { get; set; } = new();
 }

@@ -20,6 +20,6 @@ public static class BudgetPolicy
             ? LockDecision.Unlocked($"Zusatzzeit bis {graceUntilLabel}")
             : LockDecision.Locked(otherDevicesMinutes > 0
                 ? $"Tageslimit erreicht ({usedMinutes}/{budgetMinutes} min, davon {otherDevicesMinutes} min am anderen Gerät)"
-                : $"Tageslimit erreicht ({usedMinutes}/{budgetMinutes} min)");
+                : $"Tageslimit erreicht ({usedMinutes}/{budgetMinutes} min)", LockKind.Budget);
     }
 }

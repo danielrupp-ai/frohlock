@@ -71,7 +71,9 @@ public sealed class EnforcementController
                 : $"⚠ Sperrbildschirm meldet sich aus Sitzung {sessionId}, aktiv ist Sitzung {active}"
                   + $" (Konto „{Interop.SessionLauncher.UserNameOfSession(active)}“) – anderes Benutzerkonto? Dort wird er nachgestartet");
         }
-        if (fromActive && locked && (!lockVisible || !foregroundOurs) && now - _lastHiddenLockUtc > TimeSpan.FromMinutes(2))
+        // Rechtmäßiges Spielen des geprüften Ausnahme-Programms (Sperrbildschirm liegt dann dahinter) ist keine Umgehung.
+        bool exceptionInFront = lockVisible && !foregroundOurs && ExceptionForegroundAllowedNow();
+        if (fromActive && locked && !exceptionInFront && (!lockVisible || !foregroundOurs) && now - _lastHiddenLockUtc > TimeSpan.FromMinutes(2))
         {
             _lastHiddenLockUtc = now;
             _audit.Write("UMGEHUNG", "⚠ Gesperrt, aber Sperrbildschirm "
@@ -220,6 +222,7 @@ public sealed class EnforcementController
         _clock = clock;
         _audit = audit;
         _state = state;
+        _guard = new ProgramGuard(audit);
     }
 
     public void SetConfig(LockConfig? config)
@@ -264,8 +267,11 @@ public sealed class EnforcementController
                 return LockDecision.Unlocked("Noch nicht eingerichtet");
 
             // „Sofort sperren" der Eltern: sperrt unabhängig von Uhrzeit und Tageslimit.
+            // Nur eine Sperre der Eltern (Fernbefehl) erlaubt das Ausnahme-Programm – eine angeforderte
+            // Sperre (Manipulation) nie.
             if (_state.ForcedLock)
-                return LockDecision.Locked("Mama oder Papa haben den Laptop gerade gesperrt. 💛");
+                return LockDecision.Locked("Mama oder Papa haben den Laptop gerade gesperrt. 💛",
+                    _state.ForcedLockByParents ? LockKind.ParentLock : LockKind.Tamper);
 
             var utc = _clock.UtcNow;
             var age = _clock.Age;
@@ -358,6 +364,151 @@ public sealed class EnforcementController
         }
     }
 
+    /// <summary>
+    /// Ein Takt der Hauptschleife: normale Bildschirmzeit zählen – oder, wenn das geprüfte Ausnahme-Programm
+    /// im Vordergrund ist und nicht zählen soll, getrennt als „zählt nicht“ mitführen.
+    /// </summary>
+    public TickUse AccrueTick(int seconds, bool userSessionActive, bool agentAlive)
+    {
+        lock (_gate)
+        {
+            if (_config is null) return TickUse.None;
+            var d = Decide();
+            bool lockOk = AppExceptionPolicy.LockAllowsException(d, _state.PenaltySecondsRemaining);
+            var fg = ExceptionForegroundNoLock();
+            var use = AppExceptionPolicy.ClassifyTick(userSessionActive, agentAlive, d.IsLocked, ScreenOnLocked(), fg, lockOk);
+            var utc = _clock.UtcNow;
+            if (use == TickUse.Counted)
+                _state.AddUsage(utc.ToLocalTime(), new DateTimeOffset(utc).ToUnixTimeSeconds(), seconds);
+            else if (use == TickUse.Exempt)
+                _state.AddExempt(utc.ToLocalTime(), DisplayName(fg!), seconds);
+            return use;
+        }
+    }
+
+    // ---------- Ausnahme-Programm (Evoluzzer, ab 0.31.0) ----------
+
+    private readonly ProgramGuard _guard;
+    private AppException? _fgRule;          // vom Dienst geprüftes Ausnahme-Programm im Vordergrund (letzte Meldung)
+    private int _fgPid;
+    private long _fgAwake100ns;
+    private bool _fgAuditedActive;
+    private DateTime _lastFgAuditUtc = DateTime.MinValue;
+    /// <summary>So lange gilt eine Vordergrund-Meldung des Agents (er meldet jede Sekunde).</summary>
+    private const double ForegroundFreshSeconds = 4;
+
+    private static string DisplayName(AppException e)
+        => string.IsNullOrWhiteSpace(e.Name) ? e.Exe : e.Name.Trim();
+
+    /// <summary>Ergebnis für den Sperrbildschirm.</summary>
+    public sealed record ExceptionView(bool Allowed, string Name, bool Installed, int ForegroundPid, bool Uncounted);
+
+    private AppException? ExceptionForegroundNoLock()
+        => _fgRule is not null && Interop.AwakeClock.SecondsSince(_fgAwake100ns) < ForegroundFreshSeconds ? _fgRule : null;
+
+    /// <summary>Ist gerade das geprüfte Ausnahme-Programm vorn UND im jetzigen Zustand erlaubt?</summary>
+    public bool ExceptionForegroundAllowedNow()
+    {
+        lock (_gate)
+        {
+            var fg = ExceptionForegroundNoLock();
+            if (fg is null) return false;
+            var d = Decide();
+            return AppExceptionPolicy.ForegroundAllowed(fg, d.IsLocked,
+                AppExceptionPolicy.LockAllowsException(d, _state.PenaltySecondsRemaining));
+        }
+    }
+
+    /// <summary>Kommt die Pipe-Meldung vom echten Sperrbildschirm? (Nur dessen Vordergrund-Meldungen zählen.)</summary>
+    public bool IsGenuineAgent(int clientPid)
+    {
+        try { return _guard.IsGenuineAgent(clientPid); } catch { return false; }
+    }
+
+    private (List<AppException> rules, LockDecision d, bool lockOk) ExceptionContext()
+    {
+        lock (_gate)
+        {
+            var rules = AppExceptionPolicy.Effective(_config);
+            var d = Decide();
+            return (rules, d, AppExceptionPolicy.LockAllowsException(d, _state.PenaltySecondsRemaining));
+        }
+    }
+
+    /// <summary>
+    /// Sperrbildschirm fragt (jede Sekunde): Darf ein Ausnahme-Programm angeboten werden, ist es installiert,
+    /// und ist der gemeldete Vordergrund-Prozess das geprüfte Programm? Prüfungen von Pfad/Prüfsumme laufen
+    /// hier im Dienst, AUSSERHALB der Zustandssperre (Hashen kann dauern). Nur Meldungen des echten Agents
+    /// (<paramref name="trustedReporter"/>) beeinflussen das Zählen.
+    /// </summary>
+    public ExceptionView GetExceptionView(int foregroundPid, bool trustedReporter, string? localAppData, bool checkInstalled = true)
+    {
+        try
+        {
+            var (rules, d, lockOk) = ExceptionContext();
+            if (rules.Count == 0)
+            {
+                if (trustedReporter) StampForeground(null, 0);
+                return new ExceptionView(false, "", false, 0, false);
+            }
+            var lockRule = d.IsLocked && lockOk ? rules.FirstOrDefault(r => AppExceptionPolicy.AllowsDuringLock(r.Mode)) : null;
+            bool installed = lockRule is not null && checkInstalled && _guard.FindInstalled(lockRule, localAppData).Ok;
+            var fg = foregroundPid > 4 ? _guard.MatchProcess(foregroundPid, rules) : null;
+            bool fgAllowed = AppExceptionPolicy.ForegroundAllowed(fg, d.IsLocked, lockOk);
+            if (trustedReporter) StampForeground(fg, foregroundPid);
+            // Name: in der Sperre das anbietbare Programm (Knopf), sonst das gerade vorn laufende (Zeit-Anzeige).
+            string name = lockRule is not null ? DisplayName(lockRule) : (fgAllowed ? DisplayName(fg!) : "");
+            return new ExceptionView(lockRule is not null, name, installed,
+                fgAllowed ? foregroundPid : 0, fgAllowed && !d.IsLocked && AppExceptionPolicy.Uncounted(fg!.Mode));
+        }
+        catch
+        {
+            if (trustedReporter) StampForeground(null, 0);
+            return new ExceptionView(false, "", false, 0, false);   // im Zweifel: keine Ausnahme
+        }
+    }
+
+    private void StampForeground(AppException? rule, int pid)
+    {
+        lock (_gate)
+        {
+            _fgRule = rule;
+            _fgPid = rule is null ? 0 : pid;
+            _fgAwake100ns = Interop.AwakeClock.Now100ns;
+            bool active = rule is not null;
+            if (active == _fgAuditedActive) return;
+            var now = DateTime.UtcNow;
+            if (now - _lastFgAuditUtc < TimeSpan.FromMinutes(2)) return;   // kein Protokoll-Rauschen beim Hin- und Herschalten
+            _lastFgAuditUtc = now;
+            _fgAuditedActive = active;
+            var d = Decide();
+            _audit.Write("AUSNAHME", active
+                ? $"„{DisplayName(rule!)}“ im Vordergrund (geprüft) – " + (d.IsLocked ? $"in der Sperre erlaubt ({d.Reason})" : "zählt nicht zur Bildschirmzeit")
+                : "Ausnahme-Programm nicht mehr im Vordergrund");
+        }
+    }
+
+    /// <summary>Knopf „🎮 … spielen“: geprüften Pfad liefern – nur in einer Sperre, die die Ausnahme erlaubt.</summary>
+    public (bool ok, string path, string name) GetLaunchPath(string? localAppData)
+    {
+        try
+        {
+            var (rules, d, lockOk) = ExceptionContext();
+            var rule = d.IsLocked && lockOk ? rules.FirstOrDefault(r => AppExceptionPolicy.AllowsDuringLock(r.Mode)) : null;
+            if (rule is null) return (false, "", "");
+            var found = _guard.FindInstalled(rule, localAppData);
+            if (!found.Ok) return (false, "", DisplayName(rule));
+            _audit.Write("AUSNAHME", $"„{DisplayName(rule)}“ wird vom Sperrbildschirm gestartet ({d.Reason})");
+            return (true, found.Path, DisplayName(rule));
+        }
+        catch { return (false, "", ""); }
+    }
+
+    public int ExemptMinutesToday()
+    {
+        lock (_gate) return _state.ExemptMinutesToday(_clock.UtcNow.ToLocalTime());
+    }
+
     /// <summary>PIN-Versuch. Bei Erfolg temporäre Entsperrung. Gibt (ok, verbleibendeVersuche).</summary>
     public (bool ok, int remaining) SubmitPin(string pin)
     {
@@ -370,6 +521,7 @@ public sealed class EnforcementController
                 _state.MasterUnlockUntilUnix = new DateTimeOffset(masterUntil).ToUnixTimeSeconds();
                 _state.UnlockUntilUnix = _state.MasterUnlockUntilUnix;
                 _state.ForcedLock = false;
+                _state.ForcedLockByParents = false;
                 _state.PinFailuresToday = 0;
                 _state.PenaltySecondsRemaining = 0;
                 _state.PenaltyCount = 0;
@@ -394,6 +546,7 @@ public sealed class EnforcementController
                 _state.UnlockUntilUnix = new DateTimeOffset(until).ToUnixTimeSeconds();
                 if (_state.ForcedLock) _audit.Write("LOCK", "Sofortsperre durch Eltern-PIN aufgehoben");
                 _state.ForcedLock = false;
+                _state.ForcedLockByParents = false;
                 if (_state.PenaltySecondsRemaining > 0) _audit.Write("AUSZEIT", "Durch Eltern-PIN aufgehoben");
                 _state.PenaltySecondsRemaining = 0;
                 _state.PenaltyCount = 0;
@@ -519,12 +672,15 @@ public sealed class EnforcementController
     private DateTime _lastBypassDisconnectUtc = DateTime.MinValue;
 
     /// <summary>Sofort sperren (Fern-Befehl oder Overlay-Manipulation erkannt).</summary>
-    public void ForceLock(string reason)
+    /// <param name="byParents">true = Fernbefehl der Eltern (Ausnahme-Programm bleibt spielbar), false = Manipulation (streng).</param>
+    public void ForceLock(string reason, bool byParents = false)
     {
         lock (_gate)
         {
             _state.UnlockUntilUnix = 0;
             _state.MasterUnlockUntilUnix = 0; // auch die Master-Entsperrung beenden (Admin gewinnt)
+            // Eine strenge Sperre (Manipulation) wird durch eine spätere Eltern-Sperre nicht gelockert.
+            _state.ForcedLockByParents = byParents && (!_state.ForcedLock || _state.ForcedLockByParents);
             _state.ForcedLock = true;          // bleibt gesperrt, bis Eltern freigeben
             _state.Save();
             _audit.Write("LOCK", $"Sofortsperre: {reason} – gesperrt bis zur Freigabe durch Eltern");
@@ -561,6 +717,7 @@ public sealed class EnforcementController
             var until = _clock.UtcNow.AddMinutes(Math.Max(1, minutes));
             _state.UnlockUntilUnix = new DateTimeOffset(until).ToUnixTimeSeconds();
             _state.ForcedLock = false;            // Fern-Entsperren hebt auch die Sofortsperre auf
+            _state.ForcedLockByParents = false;
             _state.PenaltySecondsRemaining = 0;   // Eltern entsperren -> Auszeit ist mit erledigt
             _state.PenaltyCount = 0;
             _state.PenaltyTotalMinutes = 0;
@@ -596,6 +753,8 @@ public sealed class EnforcementController
                 PenaltySecondsRemaining = _state.PenaltySecondsRemaining,
                 PenaltyCount = _state.PenaltyCount,
                 PenaltyTotalMinutes = _state.PenaltyTotalMinutes,
+                ExemptMinutesToday = _state.ExemptMinutesToday(localNow),
+                ExemptPrograms = _state.ExemptProgramsToday(localNow),
                 AgentAliveAgeSeconds = _lastAgentAliveUtc == DateTime.MinValue
                     ? -1 : (int)(DateTime.UtcNow - _lastAgentAliveUtc).TotalSeconds,
                 RecentAudit = string.Join("\n", _audit.Tail(40))

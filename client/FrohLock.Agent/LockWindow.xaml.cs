@@ -116,6 +116,9 @@ public partial class LockWindow : Window
 
         _bubbleHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
         _bubbleHideTimer.Tick += (_, _) => { _bubbleHideTimer.Stop(); BubbleBorder.Visibility = Visibility.Collapsed; };
+
+        // Ausnahme-Programm (Evoluzzer): Vordergrund-Wächter alle 250 ms + bei jedem Vordergrund-Wechsel.
+        InitException();
     }
 
     public void SetReason(string reason)
@@ -298,7 +301,17 @@ public partial class LockWindow : Window
     /// </summary>
     private void GuardAgainstForeignWindows(IntPtr hwnd)
     {
-        var foreign = ScreenCover.FindForeign(hwnd);
+        // Vom Dienst geprüfte Ausnahme-Prozesse (Evoluzzer) sind nie „fremd“ – sie werden weder minimiert noch
+        // als Umgehung gezählt. Beim Spielen liegt die Taskleiste über der Sperre – das ist dann normal.
+        var foreign = ScreenCover.FindForeign(hwnd, AllowedPids(), ignoreShell: _passThrough);
+        if (_passThrough && foreign is not null)
+        {
+            // Etwas anderes liegt über der Sperre, während gespielt wird -> Spielen beenden, Sperre ganz nach vorn.
+            ScreenCover.Minimize(foreign);
+            ForeignWindowOverLock?.Invoke($"Fremdes Fenster während des Ausnahme-Programms: {foreign.Describe()} – minimiert", false);
+            EndPassThrough(assert: true);
+            return;
+        }
         bool escalate = _escalation.Step(_guardClock.Elapsed.TotalSeconds, foreign is not null && !foreign.Shell);
         if (foreign is null) return;
         bool minimized = ScreenCover.Minimize(foreign);
@@ -323,7 +336,7 @@ public partial class LockWindow : Window
         {
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
-            var problem = ScreenCover.Ensure(hwnd);
+            var problem = ScreenCover.Ensure(hwnd, _passThrough ? _passHwnd : IntPtr.Zero);
             if (problem is not null && report) CoverageProblem?.Invoke(problem, true);
             if (ScreenCover.IsCloaked(hwnd))
                 CoverageProblem?.Invoke("Sperrbildschirm war unsichtbar (anderer virtueller Desktop o. Ä.)", true);
@@ -333,6 +346,21 @@ public partial class LockWindow : Window
     }
 
     private void AssertForeground()
+    {
+        if (!IsVisible) return;
+        // Geprüftes Ausnahme-Programm vorn (oder eben gestartet, Prüfung läuft): nicht wegnehmen, nur die Fläche
+        // dahinter halten und auf fremde Fenster achten.
+        if (_passThrough || ExceptionHoldsForeground())
+        {
+            CheckForeground();
+            if (_passThrough) EnsureCoverage();
+            return;
+        }
+        AssertForegroundNow();
+    }
+
+    /// <summary>Sperre sofort ganz nach vorn (Fläche, Topmost, Vordergrund, Tastatur).</summary>
+    private void AssertForegroundNow()
     {
         if (!IsVisible) return;
         EnsureCoverage();
@@ -358,6 +386,8 @@ public partial class LockWindow : Window
         base.OnDeactivated(e);
         if (IsVisible)
         {
+            // Ausnahme erlaubt: Der Vordergrund-Wächter entscheidet (geprüftes Spiel -> Sperre dahinter, sonst sofort zurück).
+            if (_exAllowed) { Dispatcher.BeginInvoke(CheckForeground); return; }
             // Wer wegzuklicken versucht, bekommt eine freundliche Erinnerung.
             ShowFriendlyBypass();
             Dispatcher.BeginInvoke(AssertForeground);

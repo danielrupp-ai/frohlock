@@ -73,3 +73,24 @@ Befehle sind signiert und laufen nach 1 h ab (Replay-Schutz). Das Gerät pollt ~
    Das Manifest wird automatisch signiert (`{version}|{sha256}`).
 3. Auf dem Gerät **„Update“** auslösen (oder es wird beim nächsten Poll gezogen).
    Der Client installiert nur bei gültiger Signatur **und** passendem SHA-256.
+
+## 7. Ausnahme für ein Programm (Windows ab 0.31.0)
+
+Geräte-Detailseite eines Laptops → Karte **„🧩 Ausnahme für ein Programm“**. Je Eintrag: Name,
+Programmdatei (nur Dateiname, z. B. `Evoluzzer.exe`), optional erlaubte SHA-256-Prüfsummen, Art:
+
+| Art | Wirkung am Laptop |
+|-----|-------------------|
+| Noch nicht festgelegt | nichts (vorgemerkt) |
+| Auch während der Sperre erlaubt | Sperrbildschirm zeigt „🎮 … spielen“; nur dieses Programm ist erreichbar, die Sperre liegt dahinter. Außerhalb der Sperre zählt es normal. |
+| Zählt nicht zur Bildschirmzeit | frei nutzbar, Tageslimit/gemeinsames Konto sinken nicht; in der Sperre gesperrt |
+| Immer frei – auch in der Sperre, und zählt nie | beides |
+
+- Knopf **„🎮 Evoluzzer eintragen“** füllt Name, Datei, Prüfsumme der Godot-4.7.2-Laufzeit und Art „beides“ aus → „Speichern“.
+- Erlaubt nur bei Sperre durch Zeitplan, Tageslimit (auch gemeinsames Konto) und „Sofort sperren“ – **nie** bei Auszeit,
+  Manipulation, Fail-Secure (Zeit zu alt). PIN, Fern-Entsperren, Master-PIN wie bisher.
+- Erkennung im Dienst: voller Pfad des Vordergrund-Prozesses, Dateiname = Programmdatei, SHA-256 in der Liste,
+  Datei nach dem Start nicht ausgetauscht, keine Godot-Startparameter, die ein anderes Spiel laden. Ablehnungen stehen
+  als `AUSNAHME`-Zeile im Geräte-Protokoll.
+- Neue Spielversion mit anderer Godot-Laufzeit = andere Prüfsumme → in der Karte ergänzen, sonst bleibt alles gesperrt.
+- Die nicht gezählte Zeit erscheint im Admin („🎮 Evoluzzer: 45 Min (zählt nicht)“) und fließt nicht ins gemeinsame Tageskonto.

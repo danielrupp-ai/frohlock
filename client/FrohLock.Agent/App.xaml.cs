@@ -133,7 +133,8 @@ public partial class App : Application
         {
             _screen.RefreshExternalDisplay();
             // Minute merken, wenn der Bildschirm sichtbar an ist und das Kind ihn nutzen kann (kein Overlay).
-            if (ScreenOnNow() && !(_lock?.IsVisible ?? false))
+            // Zeit im Ausnahme-Programm, die nicht zählt, wird auch beim Nachzählen nicht mitgezählt.
+            if (ScreenOnNow() && !(_lock?.IsVisible ?? false) && !_lastExceptionUncounted)
                 ScreenLedger.Mark(_screenLedger, DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60);
             var ledgerCopy = _screenLedger.Select(r => new MinuteRange { Start = r.Start, End = r.End }).ToList();
             bool visible = _lock?.IsVisible ?? false;
@@ -157,7 +158,10 @@ public partial class App : Application
             double step = _lastPollUtc == DateTime.MinValue ? 0 : Math.Clamp((now - _lastPollUtc).TotalSeconds, 0, 5);
             _lastPollUtc = now;
 
-            var status = await _ipc.GetStatusAsync();
+            // Vordergrund melden (nur die Prozess-Kennung – ob das das Ausnahme-Programm ist, prüft der Dienst).
+            int fgPid = 0;
+            try { fgPid = ScreenCover.ForegroundPidExceptOwn(); } catch { }
+            var status = await _ipc.GetStatusAsync(fgPid, LockWindow.LocalAppDataDir);
             if (status is null)
             {
                 if (_serviceConfigured && ScreenOnNow()) _serviceSilentSeconds += step;
@@ -175,8 +179,15 @@ public partial class App : Application
                 _lock?.SetOffline(false);
             }
             bool locked = status?.Locked ?? (_lock?.IsVisible ?? false);
+            _lastExceptionUncounted = !locked && status is { ExceptionUncounted: true } && status.ExceptionForegroundPid == fgPid && fgPid > 0;
 
             UpdateBadge(status, locked);
+
+            // Ausnahme-Programm: nur mit Antwort des Dienstes und nur in einer Sperre, die es erlaubt – sonst volle Sperre.
+            if (locked && status is { ExceptionAllowed: true })
+                _lock?.SetException(true, status.ExceptionName, status.ExceptionInstalled, status.ExceptionForegroundPid, fgPid);
+            else
+                _lock?.SetException(false, "", false, 0, 0);
 
             if (locked)
             {
@@ -206,7 +217,8 @@ public partial class App : Application
             bool show = status is { Configured: true, BudgetMinutes: > 0 } && !locked;
             if (!show) { if (_badge is { IsVisible: true }) _badge.Hide(); return; }
             _badge ??= new UsageBadge(OpenOverview);
-            _badge.Update(status!.UsageMinutes, status.BudgetMinutes);
+            _badge.Update(status!.UsageMinutes, status.BudgetMinutes,
+                _lastExceptionUncounted ? (string.IsNullOrWhiteSpace(status.ExceptionName) ? "Spiel" : status.ExceptionName) : null);
             if (!_badge.IsVisible) _badge.Show();
         }
         catch { }
@@ -240,16 +252,22 @@ public partial class App : Application
         try { new ReminderWindow(minutesUntilLock).Show(); } catch { }
     }
 
+    private bool _lastExceptionUncounted;
+
     private void ShowLock(string reason)
     {
         if (_lock is null) return;
         _lock.SetReason(reason);
         if (!_lock.IsVisible)
         {
+            // Spielt das Kind gerade das (geprüfte) Ausnahme-Programm, wenn die Sperre beginnt, holt sich die Sperre
+            // nicht den Fokus – der Vordergrund-Wächter legt sie direkt dahinter.
+            _lock.ShowActivated = !_lock.WouldPassThrough();
             _lock.Show();
             _lock.ResetGuard();
             _lock.EnsureCoverage(report: false);
-            _lock.Activate();
+            if (_lock.ShowActivated) _lock.Activate();
+            _lock.ShowActivated = true;
         }
         if (_hook is not null) _hook.Active = true;
         _lastReminderMinutes = -1; // nach der Sperre wieder erinnern dürfen

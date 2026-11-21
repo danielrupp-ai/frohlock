@@ -13,7 +13,7 @@ public static class PenaltyPolicy
     {
         if (baseDecision.IsLocked) return baseDecision;   // Sperrzeit/Limit zuerst – Auszeit wartet
         if (penaltySecondsRemaining <= 0) return baseDecision;
-        return LockDecision.Locked($"{ReasonPrefix}: noch {FormatCountdown(penaltySecondsRemaining)}");
+        return LockDecision.Locked($"{ReasonPrefix}: noch {FormatCountdown(penaltySecondsRemaining)}", LockKind.Penalty);
     }
 
     /// <summary>Countdown läuft nur, wenn das Kind die Auszeit wirklich vor sich sieht.</summary>

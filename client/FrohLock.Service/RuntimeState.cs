@@ -14,6 +14,11 @@ public sealed class RuntimeState
     public long MasterUnlockUntilUnix { get; set; }  // Master-PIN-Override (überschreibt ALLES), 0 = keine
     /// <summary>„Sofort sperren" der Eltern: gilt, bis Eltern-PIN, Fern-Entsperren oder Master-PIN freigeben.</summary>
     public bool ForcedLock { get; set; }
+    /// <summary>
+    /// Kam die Sofortsperre von den Eltern (Fernbefehl)? Nur dann darf der Sperrbildschirm ein Ausnahme-Programm
+    /// anbieten. Fehlt der Wert (alter Zustand) = false = streng.
+    /// </summary>
+    public bool ForcedLockByParents { get; set; }
     public int PinFailuresToday { get; set; }
     public string PinFailureDay { get; set; } = ""; // yyyy-MM-dd zur Tagesrückstellung
     public long LastBootUnix { get; set; }
@@ -24,6 +29,8 @@ public sealed class RuntimeState
     public List<UsageSegment> UsageSegmentsToday { get; set; } = new(); // von wann bis wann
     /// <summary>Gemeinsames Tageskonto: was die anderen Geräte des Kindes heute verbraucht haben (vom Server).</summary>
     public SharedUsage? SharedUsage { get; set; }
+    /// <summary>Zeit in Ausnahme-Programmen (zählt nicht), getrennt mitgeführt – für die Anzeige bei den Eltern.</summary>
+    public ExemptUsage? ExemptUsage { get; set; }
 
     // Auszeit („gestört ohne Notfall"): Restsekunden, läuft nur bei sichtbarem Bildschirm ab.
     public long PenaltySecondsRemaining { get; set; }
@@ -122,6 +129,19 @@ public sealed class RuntimeState
     /// <summary>Fürs Tageslimit: eigene Zeit + andere Geräte (gemeinsames Tageskonto).</summary>
     public int BudgetMinutesUsedToday(DateTime trustedLocalNow)
         => UsageMinutesToday(trustedLocalNow) + OtherDevicesMinutesToday(trustedLocalNow);
+
+    /// <summary>Takt im Ausnahme-Programm verbuchen (zählt NICHT aufs Tageslimit).</summary>
+    public void AddExempt(DateTime trustedLocalNow, string program, int seconds)
+    {
+        ExemptUsage ??= new ExemptUsage();
+        ExemptUsage.Add(trustedLocalNow.ToString("yyyy-MM-dd"), program, seconds);
+    }
+
+    public int ExemptMinutesToday(DateTime trustedLocalNow)
+        => ExemptUsage?.MinutesToday(trustedLocalNow.ToString("yyyy-MM-dd")) ?? 0;
+
+    public List<ExemptProgramView> ExemptProgramsToday(DateTime trustedLocalNow)
+        => ExemptUsage?.Today(trustedLocalNow.ToString("yyyy-MM-dd")) ?? new List<ExemptProgramView>();
 
     public int UsageMinutesToday(DateTime trustedLocalNow)
     {

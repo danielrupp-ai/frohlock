@@ -32,6 +32,21 @@ public sealed class IpcClient
     public Task<IpcMessage?> GetStatusAsync(CancellationToken ct = default)
         => SendAsync(new IpcMessage { Kind = IpcKind.GetStatus }, ct: ct);
 
+    /// <summary>Status + Vordergrund-Meldung des Sperrbildschirms (welcher Prozess ist vorn? – geprüft wird im Dienst).</summary>
+    public Task<IpcMessage?> GetStatusAsync(int foregroundPid, string localAppData, CancellationToken ct = default)
+        => SendAsync(new IpcMessage
+        {
+            Kind = IpcKind.GetStatus, ForegroundPid = foregroundPid, ReportsForeground = true, LocalAppData = localAppData
+        }, ct: ct);
+
+    /// <summary>Ist dieser Prozess das geprüfte Ausnahme-Programm und gerade erlaubt?</summary>
+    public Task<IpcMessage?> CheckProgramAsync(int pid, CancellationToken ct = default)
+        => SendAsync(new IpcMessage { Kind = IpcKind.CheckProgram, ForegroundPid = pid }, ct: ct);
+
+    /// <summary>Geprüften Pfad des Ausnahme-Programms holen (nur in einer Sperre, die es erlaubt).</summary>
+    public Task<IpcMessage?> LaunchProgramAsync(string localAppData, CancellationToken ct = default)
+        => SendAsync(new IpcMessage { Kind = IpcKind.LaunchProgram, LocalAppData = localAppData }, timeoutMs: 5000, ct: ct);
+
     public Task<IpcMessage?> SubmitPinAsync(string pin, CancellationToken ct = default)
         => SendAsync(new IpcMessage { Kind = IpcKind.SubmitPin, Pin = pin }, ct: ct);
 

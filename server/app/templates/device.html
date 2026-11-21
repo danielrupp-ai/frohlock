@@ -167,6 +167,65 @@
 </div>
 {% endif %}
 
+{% if not is_android and not is_ios %}
+<div class="card" id="programme">
+  <h2>🧩 Ausnahme für ein Programm</h2>
+  <p class="muted" style="margin:0 0 10px">Hier können Sie ein einzelnes Programm auf dem Laptop anders behandeln als den Rest – zum Beispiel ein Spiel,
+    das auch dann noch gespielt werden darf, wenn die Zeit für heute rum ist. Welche Ausnahme gelten soll, legen Sie unten fest.
+    Solange „Noch nicht festgelegt“ gewählt ist, ändert sich am Laptop nichts.</p>
+  <details style="margin:0 0 10px"><summary class="muted">Was bedeutet das?</summary>
+    <ul class="muted" style="margin:6px 0 0">
+      {% for m in program_exception_modes %}<li><b>{{ m.title }}:</b> {{ m.text }}</li>{% endfor %}
+    </ul>
+    <p class="muted" style="margin:6px 0 0">Sicherheit: FrohLock erkennt das Programm am Dateinamen <b>und</b> an der Prüfsumme der Programmdatei.
+      Ein umbenanntes anderes Programm wird so nicht durchgelassen. Ohne Prüfsumme reicht der Dateiname – das ist leichter auszutricksen.
+      Bei Auszeit und bei erkannter Manipulation gibt es nie eine Ausnahme. Mit Eltern-PIN und „Entsperren“ geht alles wie bisher.</p>
+  </details>
+  {% if not program_exception_supported %}<p style="margin:0 0 10px;color:#ffab40">Hinweis: Diese Ausnahme wirkt erst ab FrohLock {{ program_exception_min }} auf dem Laptop
+    (jetzt: {{ dev['app_version'] or 'unbekannt' }}). Bis dahin ändert sich am Laptop nichts – das Update kommt automatisch, sobald es bereitgestellt ist.</p>{% endif %}
+  {% if exempt_today %}<p style="margin:0 0 10px">🎮 Heute: <b>{{ exempt_today.label }}</b> <span class="muted">(zählt nicht zur Bildschirmzeit)</span></p>{% endif %}
+  <form method="post" action="/admin/devices/{{ dev['id'] }}/program-exceptions">
+    {% if program_exceptions %}
+    <table style="width:100%;margin-bottom:10px">
+      <tr><th style="text-align:left">Programm</th><th style="text-align:left">Ausnahme</th><th style="text-align:left">Prüfsummen (SHA-256)</th><th>Entfernen</th></tr>
+      {% for e in program_exceptions %}
+      <tr>
+        <td>{{ e.name }}<br><span class="muted" style="font-size:12px">{{ e.exe }}</span></td>
+        <td><select name="mode_{{ loop.index0 }}">
+          {% for m in program_exception_modes %}<option value="{{ m.key }}" {% if m.key == e.mode %}selected{% endif %}>{{ m.title }}</option>{% endfor %}
+        </select></td>
+        <td><textarea name="sha_{{ loop.index0 }}" rows="2" style="width:100%;font-family:monospace;font-size:11px" placeholder="leer = nur Dateiname">{{ e.sha256|join("\n") }}</textarea>
+          {% if not e.sha256 %}<span style="font-size:12px;color:#ffab40">⚠ ohne Prüfsumme</span>{% endif %}</td>
+        <td style="text-align:center"><input type="checkbox" name="del_{{ loop.index0 }}"></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted" style="margin:0 0 10px"><b>Zurzeit:</b> keine Ausnahme eingerichtet.</p>{% endif %}
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap">
+      <label class="muted">Name
+        <input name="new_name" placeholder="z. B. Evoluzzer" maxlength="60" style="display:block;margin-top:4px;width:140px"></label>
+      <label class="muted">Programmdatei
+        <input name="new_exe" placeholder="z. B. Evoluzzer.exe" maxlength="80" style="display:block;margin-top:4px;width:160px"></label>
+      <label class="muted">Prüfsummen (optional, je Zeile eine)
+        <textarea name="new_sha" rows="2" style="display:block;margin-top:4px;width:300px;font-family:monospace;font-size:11px"></textarea></label>
+      <label class="muted">Ausnahme
+        <select name="new_mode" style="display:block;margin-top:4px">
+          {% for m in program_exception_modes %}<option value="{{ m.key }}">{{ m.title }}</option>{% endfor %}
+        </select></label>
+    </div>
+    <div class="row" style="margin-top:12px;gap:10px">
+      <button type="button" class="secondary" id="evoluzzer-preset"
+              data-name="{{ evoluzzer_preset.name }}" data-exe="{{ evoluzzer_preset.exe }}"
+              data-sha="{{ evoluzzer_preset.sha256|join('\n') }}" data-mode="{{ evoluzzer_preset.mode }}"
+              onclick="var f=this.form,d=this.dataset;f.new_name.value=d.name;f.new_exe.value=d.exe;f.new_sha.value=d.sha;f.new_mode.value=d.mode;">🎮 Evoluzzer eintragen</button>
+      <button type="submit">Speichern</button>
+    </div>
+    <p class="muted" style="margin:6px 0 0;font-size:12px">„Evoluzzer eintragen“ füllt die Felder oben aus (Art: „Immer frei – auch in der Sperre, und zählt nie“) –
+      danach noch „Speichern“ drücken. Der Laptop übernimmt die Ausnahme in unter einer Minute.</p>
+  </form>
+</div>
+{% endif %}
+
 {% if gap_alerts %}
 <div class="card" style="border:2px solid #ff5252">
   <h2>⚠ Auffälligkeiten am Gerät</h2>
