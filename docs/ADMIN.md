@@ -87,7 +87,7 @@ Programmdatei (nur Dateiname, z. B. `Evoluzzer.exe`), optional erlaubte SHA-256-
 | Immer frei – auch in der Sperre, und zählt nie | beides |
 
 - Knopf **„🎮 Evoluzzer eintragen“** füllt Name, Datei, Prüfsumme der Godot-4.7.2-Laufzeit und Art „beides“ aus → „Speichern“.
-- Erlaubt nur bei Sperre durch Zeitplan, Tageslimit (auch gemeinsames Konto) und „Sofort sperren“ – **nie** bei Auszeit,
+- Erlaubt nur, wenn das Tageslimit aufgebraucht ist (auch gemeinsames Konto) – **nicht** im Sperrfenster des Zeitplans (Schlafenszeit), **nicht** bei „Sofort sperren“ und **nie** bei Auszeit,
   Manipulation, Fail-Secure (Zeit zu alt). PIN, Fern-Entsperren, Master-PIN wie bisher.
 - Erkennung im Dienst: voller Pfad des Vordergrund-Prozesses, Dateiname = Programmdatei, SHA-256 in der Liste,
   Datei nach dem Start nicht ausgetauscht, keine Godot-Startparameter, die ein anderes Spiel laden. Ablehnungen stehen

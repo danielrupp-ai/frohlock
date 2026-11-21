@@ -51,6 +51,8 @@ class Settings:
         self.update_version: str = os.getenv("FROHLOCK_UPDATE_VERSION", "")
         self.update_url: str = os.getenv("FROHLOCK_UPDATE_URL", "")
         self.update_sha256: str = os.getenv("FROHLOCK_UPDATE_SHA256", "")
+        # Probelauf: Komma-Liste von Gerätenamen/-kennungen, die das Windows-Fern-Update ZUERST bekommen (leer = alle).
+        self.update_only: list[str] = [x.strip().lower() for x in os.getenv("FROHLOCK_UPDATE_ONLY", "").split(",") if x.strip()]
 
         # Android: Version/Prüfsumme werden aus dem Download-Ordner gelesen (FrohLock.apk +
         # android-version.txt + android-cert.txt, geschrieben von update-download.sh) – kein

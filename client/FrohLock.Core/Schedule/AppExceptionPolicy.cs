@@ -42,14 +42,17 @@ public static class AppExceptionPolicy
         => (config?.AppExceptions ?? new List<AppException>()).Where(IsEffective).ToList();
 
     /// <summary>
-    /// Erlaubt DIESE Sperre das Ausnahme-Programm? Nur Zeitplan, Tageslimit (auch gemeinsames Konto) und
-    /// „Sofort sperren“ der Eltern – nie bei Auszeit (Strafe), Manipulation, Fail-Secure oder unbekanntem Grund.
+    /// Erlaubt DIESE Sperre das Ausnahme-Programm? NUR wenn das Tageslimit aufgebraucht ist (auch gemeinsames Konto) –
+    /// so hat Daniel es bestellt („wenn seine Zeit rum ist“). Bewusst NICHT im Sperrfenster des Zeitplans (Schlafenszeit,
+    /// Schule) und NICHT bei „Sofort sperren“ der Eltern (das ist eine ausdrückliche Entscheidung der Eltern), und nie bei
+    /// Auszeit (Strafe), Manipulation, Fail-Secure oder unbekanntem Grund. Vorsichtige Auslegung des Hauptagenten 21.11.2026;
+    /// wer es weiter fassen will, ändert genau diese eine Zeile.
     /// Eine noch offene Auszeit sperrt die Ausnahme ebenfalls (sie wartet nur auf das Ende der anderen Sperre).
     /// </summary>
     public static bool LockAllowsException(LockDecision decision, long penaltySecondsRemaining)
         => decision.IsLocked
            && penaltySecondsRemaining <= 0
-           && decision.Kind is LockKind.Schedule or LockKind.Budget or LockKind.ParentLock;
+           && decision.Kind is LockKind.Budget;
 
     /// <summary>
     /// Einordnung eines Zähltakts.

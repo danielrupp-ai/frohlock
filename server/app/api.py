@@ -257,7 +257,7 @@ def get_commands(device_id: str, request: Request):
     )
     # Auszeit-Befehle erst ab v0.20.0 ausliefern – ältere Clients kennen sie nicht und würden sie
     # quittieren, ohne zu sperren. Bis zum Update bleiben sie in der Warteschlange.
-    dev_row = db.query_one("SELECT app_version, platform FROM devices WHERE id=?", (device_id,))
+    dev_row = db.query_one("SELECT app_version, platform, name FROM devices WHERE id=?", (device_id,))
     platform = ((dev_row["platform"] if dev_row else "") or "windows").lower()
     # Android kennt die Auszeit von Anfang an; Windows erst ab 0.20.0.
     knows_timeout = platform in ("android", "ios") or \
@@ -299,6 +299,11 @@ def get_commands(device_id: str, request: Request):
             target = t[0] if t else ""
         else:
             target = settings.update_version if (settings.update_url and settings.update_sha256) else ""
+            # Probelauf (FROHLOCK_UPDATE_ONLY): nur die genannten Geräte bekommen das Windows-Update von selbst.
+            if target and settings.update_only and dev_row is not None:
+                kennungen = {str(device_id).lower(), str(dev_row["name"] or "").strip().lower()}
+                if not (kennungen & set(settings.update_only)):
+                    target = ""
         if target and dev_row and _version_older(dev_row["app_version"] or "0", target):
             from .signing import sign_command
             out.append(sign_command(device_id, "update", expires_in=3600)["envelope"])

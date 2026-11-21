@@ -62,7 +62,7 @@ PROGRAM_EXCEPTION_MODES = {
     "offen": ("Noch nicht festgelegt",
               "Das Programm ist vorgemerkt, am Laptop ändert sich noch nichts."),
     "sperre": ("Auch während der Sperre erlaubt",
-               "Ist der Laptop gesperrt (Schlafenszeit, Tageslimit, „Sofort sperren“), zeigt der Sperrbildschirm einen Knopf "
+               "Ist das Tageslimit aufgebraucht, zeigt der Sperrbildschirm einen Knopf "
                "zum Starten. Nur dieses Programm ist dann erreichbar, alles andere bleibt gesperrt. Außerhalb der Sperre zählt "
                "es ganz normal zur Bildschirmzeit."),
     "zeit": ("Zählt nicht zur Bildschirmzeit",

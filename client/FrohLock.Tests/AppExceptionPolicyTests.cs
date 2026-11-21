@@ -43,11 +43,11 @@ public class AppExceptionPolicyTests
     }
 
     [Fact]
-    public void Lock_allows_exception_only_for_schedule_budget_and_parent_lock()
+    public void Lock_allows_exception_only_when_daily_budget_is_used_up()
     {
-        Assert.True(AppExceptionPolicy.LockAllowsException(LockDecision.Locked("Sperrfenster", LockKind.Schedule), 0));
+        Assert.False(AppExceptionPolicy.LockAllowsException(LockDecision.Locked("Sperrfenster", LockKind.Schedule), 0));   // Schlafenszeit bleibt streng
         Assert.True(AppExceptionPolicy.LockAllowsException(LockDecision.Locked("Tageslimit", LockKind.Budget), 0));
-        Assert.True(AppExceptionPolicy.LockAllowsException(LockDecision.Locked("Eltern", LockKind.ParentLock), 0));
+        Assert.False(AppExceptionPolicy.LockAllowsException(LockDecision.Locked("Eltern", LockKind.ParentLock), 0));     // „Sofort sperren“ bleibt streng
 
         Assert.False(AppExceptionPolicy.LockAllowsException(LockDecision.Locked("Auszeit", LockKind.Penalty), 900));
         Assert.False(AppExceptionPolicy.LockAllowsException(LockDecision.Locked("Fail-Secure", LockKind.FailSecure), 0));
