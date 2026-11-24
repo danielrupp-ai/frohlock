@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -12,6 +13,7 @@ from .schemas import ConfigDraft, HeartbeatIn, RegisterRequest, RegisterResponse
 from .security import authed_device, hash_token, new_token
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 MESSAGE_MIN_ANDROID = "1.0.10"   # ab hier mit Video + „zeigen ab"
 
@@ -31,6 +33,70 @@ def enqueue_message(device_id: str, title: str, text: str, button: str, not_befo
                      VALUES (?,?,?,?,?,?,?,?)""",
                   (signed["commandId"], device_id, 10, json.dumps(signed), now, start + keep_days * 86400, now, start))
     return signed["commandId"]
+
+
+def insert_command(c, device_id: str, ctype: str, signed: dict, expires_in: int, now: int | None = None) -> str:
+    """Einen bereits signierten Befehl in die Warteschlange legen (`c` = offene Transaktion).
+    Gemeinsam genutzt vom Admin („Entsperren", „Sofort sperren" …) und von der Tageswechsel-Automatik."""
+    from .signing import CMD
+    now = int(time.time()) if now is None else now
+    c.execute(
+        """INSERT INTO commands(id, device_id, type, payload_json, issued_at, expires_at, created_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (signed["commandId"], device_id, CMD[ctype], json.dumps(signed), now, now + expires_in, now),
+    )
+    return signed["commandId"]
+
+
+# So beginnt der Sperrgrund der Eltern-„Sofort sperren"-Sperre auf Windows, Android und iPhone
+# (Löschversuch, Zeitplan und Tageslimit haben andere Texte).
+PARENT_LOCK_REASON_PREFIX = "Mama oder Papa haben"
+PARENT_LOCK_END_UNLOCK_MINUTES = 1
+# Ab diesen Versionen beendet die App die Eltern-Sofortsperre selbst am Tageswechsel. Meldet so ein Gerät am
+# neuen Tag trotzdem noch „Mama oder Papa haben …“, ist es die STRENGE Sperre (Manipulation, Windows) – die
+# bleibt bis zur Freigabe durch Eltern, der Server schickt dann nichts.
+PARENT_LOCK_SELF_END = {"windows": "0.32.0", "android": "1.0.13"}
+
+
+def _app_ends_parent_lock_itself(platform: str, app_version: str) -> bool:
+    since = PARENT_LOCK_SELF_END.get((platform or "windows").lower())
+    return bool(since) and not _version_older(app_version or "0", since)
+
+
+def end_parent_lock_on_new_day(c, device_id: str, hb: HeartbeatIn) -> bool:
+    """Alte App-Versionen kennen das Tagesende der Eltern-Sofortsperre nicht und blieben tagelang gesperrt.
+    Meldet das Gerät einen neuen Tag (`hb.usageDay` nach dem Sperr-Tag), wird die Merkung gelöscht – und, wenn
+    das Gerät noch mit dem Eltern-Grund gesperrt ist, EINMAL ein Fern-Entsperren (1 Min) eingereiht. Danach gelten
+    wieder Zeitplan und Tageslimit. Läuft in der Heartbeat-Transaktion; ein Fehler hier darf den Heartbeat nie kippen."""
+    try:
+        row = c.execute("SELECT parent_lock_day FROM devices WHERE id=?", (device_id,)).fetchone()
+        lock_day = (row["parent_lock_day"] or "") if row else ""
+        day = (hb.usageDay or "").strip()
+        if not lock_day or not day or day <= lock_day:
+            return False   # keine offene Eltern-Sperre, oder sie gilt noch heute
+        send_unlock = (bool(hb.currentlyLocked) and (hb.lockReason or "").startswith(PARENT_LOCK_REASON_PREFIX)
+                       and not _app_ends_parent_lock_itself(hb.platform, hb.appVersion))
+        signed = None
+        if send_unlock:
+            from .signing import sign_command
+            signed = sign_command(device_id, "unlock", unlock_minutes=PARENT_LOCK_END_UNLOCK_MINUTES, expires_in=3600)
+        # Teil-Schreibvorgang zurückrollbar, ohne den Heartbeat-UPDATE davor zu verlieren.
+        c.execute("SAVEPOINT parent_lock_end")
+        try:
+            c.execute("UPDATE devices SET parent_lock_day=NULL WHERE id=?", (device_id,))
+            if signed:
+                insert_command(c, device_id, "unlock", signed, 3600)
+                db.audit("automatik", "cmd:unlock", device_id,
+                         "Sofortsperre endet mit dem neuen Tag (1 min)", c=c)
+            c.execute("RELEASE SAVEPOINT parent_lock_end")
+        except Exception:
+            c.execute("ROLLBACK TO SAVEPOINT parent_lock_end")
+            c.execute("RELEASE SAVEPOINT parent_lock_end")
+            raise
+        return send_unlock
+    except Exception:
+        log.exception("Tageswechsel der Eltern-Sofortsperre fehlgeschlagen (device %s)", device_id)
+        return False
 
 
 def _require_self(request: Request, device_id: str) -> str:
@@ -146,6 +212,7 @@ def heartbeat(device_id: str, hb: HeartbeatIn, request: Request):
         new_lines = _remember_gap_alerts(c, device_id, hb.recentAudit)
         alerts.on_new_lines(c, device_id, new_lines, now)
         _note_lock_hidden(c, device_id, hb, now)
+        end_parent_lock_on_new_day(c, device_id, hb)
         # Tages-Historie: höchsten gemeldeten Wert je Tag behalten.
         day = hb.usageDay or time.strftime("%Y-%m-%d")
         # Abschnitte „von wann bis wann" je Tag mitschreiben (für die Zeitleiste im Admin, auch rückwirkend).

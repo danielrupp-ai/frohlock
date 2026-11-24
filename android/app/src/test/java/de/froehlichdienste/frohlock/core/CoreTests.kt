@@ -103,6 +103,131 @@ class CoreTests {
         assertEquals("", st.forcedLockMessage)
     }
 
+    // ---------- Eltern-Sofortsperre endet mit dem Tageswechsel (Löschversuch-Sperre nicht) ----------
+
+    private fun forcedEnforcer(clock: FakeClock, st: RuntimeState, audit: Audit = MemAudit(), config: LockConfig = cfg()): Enforcer {
+        val (h, s) = PinHasher.hash("2468", 1000)
+        return Enforcer(clock, audit, st, {}).also { it.setConfig(config.copy(pinHash = h, pinSalt = s)) }
+    }
+
+    @Test fun parentForcedLockEndsWithNewDay() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val st = RuntimeState()
+        val audit = MemAudit()
+        val en = forcedEnforcer(clock, st, audit)
+        en.forceLock("Fern-Befehl")
+        assertEquals("2026-11-02", st.forcedLockDay)
+        assertTrue(audit.lines.any { it == "LOCK\tSofortsperre: Fern-Befehl – gesperrt bis zum Tageswechsel oder bis zur Freigabe durch Eltern" })
+        val d = en.decide()
+        assertTrue(d.locked)
+        assertTrue("Text beginnt wie vom Server erwartet", d.reason.startsWith("Mama oder Papa haben"))
+        assertEquals("Mama oder Papa haben das Handy für heute gesperrt. Morgen geht es weiter. 💛", d.reason)
+        clock.t = LocalDateTime.of(2026, 11, 2, 23, 59)
+        assertTrue("am selben Tag noch gesperrt", en.decide().locked)
+        assertTrue(st.forcedLock)
+
+        clock.t = LocalDateTime.of(2026, 11, 3, 0, 0)
+        assertFalse("nach Tageswechsel frei", en.decide().locked)
+        assertFalse(st.forcedLock)
+        assertEquals("", st.forcedLockDay)
+        assertTrue(audit.lines.any { it == "LOCK\tSofortsperre endet mit dem neuen Tag (gesperrt am 2026-11-02)" })
+    }
+
+    @Test fun afterNewDayScheduleAndBudgetApplyAgain() {
+        // Zeitplan: Mo 21:00 – Di 07:00. Gesperrt Mo 15:00 → Di 00:00 gilt nur noch der Zeitplan, ab 07:00 frei.
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val st = RuntimeState()
+        val en = forcedEnforcer(clock, st, config = cfg(listOf(night), budget = 60))
+        en.forceLock("Fern-Befehl")
+        clock.t = LocalDateTime.of(2026, 11, 3, 1, 0)
+        val d = en.decide()
+        assertTrue("Schlafenszeit sperrt weiter", d.locked)
+        assertFalse(d.reason.startsWith("Mama oder Papa haben"))
+        assertFalse(st.forcedLock)
+        clock.t = LocalDateTime.of(2026, 11, 3, 7, 0)
+        assertFalse(en.decide().locked)
+        // Tageslimit startet neu: mit 60 Min. verbrauchter Zeit am neuen Tag gesperrt, vorher nicht.
+        repeat(60) { clock.t = clock.t.plusMinutes(1); en.accrueUsage(60) }
+        assertTrue(en.decide().locked)
+        assertFalse(st.forcedLock)
+    }
+
+    @Test fun tamperLockSurvivesNewDay() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val st = RuntimeState()
+        val en = forcedEnforcer(clock, st)
+        en.forceLock("Löschversuch", "Bleibt gesperrt")
+        clock.t = LocalDateTime.of(2026, 11, 3, 0, 5)
+        assertTrue(en.decide().locked); assertEquals("Bleibt gesperrt", en.decide().reason)
+        clock.t = LocalDateTime.of(2026, 11, 9, 12, 0)
+        assertTrue(en.decide().locked); assertEquals("Bleibt gesperrt", en.decide().reason)
+        assertTrue(st.forcedLock)
+        assertTrue(en.submitPin("2468").ok)
+        assertFalse(en.decide().locked)
+        assertFalse(st.forcedLock); assertEquals("", st.forcedLockDay); assertEquals("", st.forcedLockMessage)
+    }
+
+    @Test fun parentLockDoesNotSoftenTamperLock() {
+        // Löschversuch-Sperre läuft, dann drücken Eltern „Sofort sperren“: bleibt streng, läuft NICHT mit dem Tag ab.
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val st = RuntimeState()
+        val en = forcedEnforcer(clock, st)
+        en.forceLock("Löschversuch", "Bleibt gesperrt")
+        en.forceLock("Fern-Befehl")
+        assertEquals("Bleibt gesperrt", st.forcedLockMessage)
+        clock.t = LocalDateTime.of(2026, 11, 4, 12, 0)
+        assertTrue(en.decide().locked); assertEquals("Bleibt gesperrt", en.decide().reason)
+        assertTrue(st.forcedLock)
+    }
+
+    @Test fun legacyForcedLockWithoutDayGetsStampedAndEndsNextDay() {
+        // Sperre aus einer älteren App-Version: forcedLock=true, aber kein Tag gespeichert.
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val st = RuntimeState().apply { forcedLock = true }
+        val en = forcedEnforcer(clock, st)
+        assertEquals("", st.forcedLockDay)
+        assertTrue(en.decide().locked)
+        assertEquals("Tag wird gestempelt", "2026-11-02", st.forcedLockDay)
+        assertTrue(st.forcedLock)
+        clock.t = LocalDateTime.of(2026, 11, 2, 22, 0)
+        assertTrue("am selben Tag weiter gesperrt", en.decide().locked)
+        clock.t = LocalDateTime.of(2026, 11, 3, 8, 0)
+        assertFalse("am nächsten Tag frei", en.decide().locked)
+        assertFalse(st.forcedLock)
+        assertEquals("", st.forcedLockDay)
+    }
+
+    @Test fun forcedLockStaysWhenClockSetBack() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val st = RuntimeState()
+        val en = forcedEnforcer(clock, st)
+        en.forceLock("Fern-Befehl")
+        clock.t = LocalDateTime.of(2026, 11, 1, 15, 0)       // Uhr einen Tag zurück
+        assertTrue(en.decide().locked)
+        assertTrue(st.forcedLock); assertEquals("2026-11-02", st.forcedLockDay)
+        clock.t = LocalDateTime.of(2026, 11, 2, 16, 0)       // wieder am Sperrtag
+        assertTrue(en.decide().locked)
+        clock.t = LocalDateTime.of(2026, 11, 3, 0, 1)
+        assertFalse(en.decide().locked)
+    }
+
+    @Test fun forcedLockDaySurvivesJsonRoundTripAndIsClearedOnUnlock() {
+        val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
+        val st = RuntimeState()
+        val en = forcedEnforcer(clock, st)
+        en.forceLock("Fern-Befehl")
+        val again = RuntimeState.fromJson(JSONObject(st.toJson().toString()))
+        assertTrue(again.forcedLock); assertEquals("2026-11-02", again.forcedLockDay)
+        // alter Zustand ohne das Feld → leer
+        assertEquals("", RuntimeState.fromJson(JSONObject("""{"forcedLock":true}""")).forcedLockDay)
+
+        en.remoteUnlock(30, "Eltern")
+        assertFalse(st.forcedLock); assertEquals("", st.forcedLockDay)
+        en.forceLock("Fern-Befehl")
+        assertTrue(en.submitPin("2468").ok)
+        assertEquals("", st.forcedLockDay)
+    }
+
     @Test fun incompleteGuardLocksUnlessPinGrace() {
         val clock = FakeClock(LocalDateTime.of(2026, 11, 2, 15, 0))
         val (h, s) = PinHasher.hash("2468", 1000)
@@ -185,10 +310,10 @@ class CoreTests {
     }
 
     @Test fun stateRoundTrip() {
-        val s = RuntimeState().apply { forcedLock = true; penaltySecondsRemaining = 42; suspendedPackages.add("a.b") }
+        val s = RuntimeState().apply { forcedLock = true; forcedLockDay = "2026-11-02"; penaltySecondsRemaining = 42; suspendedPackages.add("a.b") }
         s.addUsage(java.time.LocalDate.of(2026, 11, 2), 1000, 30)
         val r = RuntimeState.fromJson(JSONObject(s.toJson().toString()))
-        assertTrue(r.forcedLock); assertEquals(42L, r.penaltySecondsRemaining)
+        assertTrue(r.forcedLock); assertEquals("2026-11-02", r.forcedLockDay); assertEquals(42L, r.penaltySecondsRemaining)
         assertEquals(listOf("a.b"), r.suspendedPackages); assertEquals(1, r.usageSegmentsToday.size)
     }
 

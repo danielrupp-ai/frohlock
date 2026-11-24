@@ -61,13 +61,123 @@ final class CoreTests: XCTestCase {
     func testForceLockUntilPinAndNotConfiguredNeverLocks() {
         var en = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
         let now = d("2026-11-20 12:00")
-        en.forceLock()
-        XCTAssertTrue(en.decide(now).locked)
+        en.forceLock(now: now)
+        let dec = en.decide(now)
+        XCTAssertTrue(dec.locked)
+        XCTAssertEqual(dec.reason, "Mama oder Papa haben das iPhone für heute gesperrt. Morgen geht es weiter. 💛")
+        XCTAssertTrue(dec.reason.hasPrefix("Mama oder Papa haben"), "der Server erkennt die Sperre an diesem Satzanfang")
         en.remoteUnlock(minutes: 10, now: now)
         XCTAssertFalse(en.decide(now).locked)
         var raw = Enforcer(config: LockConfig(), state: RuntimeState(), clock: utc)
-        raw.forceLock()
+        raw.forceLock(now: now)
         XCTAssertFalse(raw.decide(now).locked, "ohne PIN nie sperren")
+    }
+
+    func testForcedLockEndsWithNextDay() {
+        var en = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        let evening = d("2026-11-20 22:30")
+        en.forceLock(now: evening)
+        XCTAssertEqual(en.state.forcedLockDay, "2026-11-20")
+        XCTAssertTrue(en.decide(evening).locked)
+        XCTAssertTrue(en.decide(d("2026-11-20 23:59")).locked)
+        // Rein lesend: ab Mitternacht nicht mehr durch die Sofortsperre gesperrt – auch ohne dass der Zustand bereinigt wurde.
+        let before = en.state
+        XCTAssertFalse(en.decide(d("2026-11-21 00:00")).locked)
+        XCTAssertFalse(en.decide(d("2026-11-22 09:00")).locked)
+        XCTAssertEqual(en.state, before, "decide verändert den Zustand nicht")
+        XCTAssertTrue(en.state.forcedLock)
+        // Aufräumen
+        XCTAssertFalse(en.expireForcedLock(now: d("2026-11-20 23:59")), "am selben Tag nichts zu tun")
+        XCTAssertTrue(en.state.forcedLock)
+        XCTAssertTrue(en.expireForcedLock(now: d("2026-11-21 00:00")))
+        XCTAssertFalse(en.state.forcedLock)
+        XCTAssertEqual(en.state.forcedLockDay, "")
+        XCTAssertFalse(en.expireForcedLock(now: d("2026-11-21 00:01")), "nichts mehr aufzuräumen")
+        XCTAssertFalse(en.decide(d("2026-11-21 00:01")).locked)
+    }
+
+    func testNormalDecisionResumesAfterForcedLockDay() {
+        // Nach dem Tageswechsel gilt wieder die normale Entscheidung (Sperrzeit/Tageslimit starten neu).
+        var en = Enforcer(config: cfg([ScheduleWindow(startMinute: 1260, endMinute: 420)], budget: 60), state: RuntimeState(), clock: utc)
+        en.recordUsage(minutes: 60, now: d("2026-11-20 15:00"))
+        en.forceLock(now: d("2026-11-20 15:00"))
+        XCTAssertFalse(en.decide(d("2026-11-21 10:00")).locked, "neuer Tag: Sofortsperre und gestriges Limit weg")
+        XCTAssertTrue(en.decide(d("2026-11-21 22:00")).locked, "Sperrzeit gilt am neuen Tag normal")
+        XCTAssertFalse(en.decide(d("2026-11-21 10:00")).reason.contains("Mama oder Papa"))
+    }
+
+    func testExpireForcedLockStampsEmptyDayAndExpiresNextDay() {
+        var en = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        en.state.forcedLock = true            // alter Zustand: Sofortsperre ohne Tag
+        XCTAssertEqual(en.state.forcedLockDay, "")
+        XCTAssertTrue(en.decide(d("2026-11-20 12:00")).locked, "leerer Tag zählt als gesetzt")
+        XCTAssertTrue(en.expireForcedLock(now: d("2026-11-20 12:00")), "stempelt → Zustand geändert")
+        XCTAssertEqual(en.state.forcedLockDay, "2026-11-20")
+        XCTAssertTrue(en.state.forcedLock)
+        XCTAssertFalse(en.expireForcedLock(now: d("2026-11-20 18:00")))
+        XCTAssertTrue(en.expireForcedLock(now: d("2026-11-21 00:30")))
+        XCTAssertFalse(en.state.forcedLock)
+        // ohne Sofortsperre ist nichts zu tun
+        var none = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        XCTAssertFalse(none.expireForcedLock(now: d("2026-11-20 12:00")))
+        XCTAssertEqual(none.state.forcedLockDay, "")
+    }
+
+    func testForcedLockStaysWhenClockTurnedBack() {
+        var en = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        en.forceLock(now: d("2026-11-20 12:00"))
+        let back = d("2026-11-19 12:00")
+        XCTAssertTrue(en.decide(back).locked)
+        XCTAssertFalse(en.expireForcedLock(now: back))
+        XCTAssertTrue(en.state.forcedLock)
+        XCTAssertEqual(en.state.forcedLockDay, "2026-11-20")
+    }
+
+    func testPinAndRemoteUnlockAndMasterClearForcedLockDay() {
+        let now = d("2026-11-20 12:00")
+        var a = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        a.forceLock(now: now)
+        XCTAssertEqual(a.submitPin("2468", minutes: 30, now: now), .ok)
+        XCTAssertFalse(a.state.forcedLock); XCTAssertEqual(a.state.forcedLockDay, "")
+        var b = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        b.forceLock(now: now)
+        b.remoteUnlock(minutes: 30, now: now)
+        XCTAssertFalse(b.state.forcedLock); XCTAssertEqual(b.state.forcedLockDay, "")
+        // (Master-PIN-Pfad leert ebenfalls das Feld – die Master-PINs sind nur als Hash eingebaut, daher hier nicht testbar.)
+        // falsche PIN lässt die Sperre bestehen
+        var w = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        w.forceLock(now: now)
+        XCTAssertEqual(w.submitPin("0000", minutes: 30, now: now), .wrong(remaining: 7))
+        XCTAssertTrue(w.state.forcedLock); XCTAssertEqual(w.state.forcedLockDay, "2026-11-20")
+    }
+
+    func testNextTransitionIncludesMidnightWhileForcedLocked() {
+        var en = Enforcer(config: cfg(), state: RuntimeState(), clock: utc)
+        let now = d("2026-11-20 12:00")
+        en.forceLock(now: now)
+        XCTAssertEqual(en.nextTransition(now), d("2026-11-21 00:00"), "iOS muss um Mitternacht geweckt werden, damit die Sperre aufgeht")
+        XCTAssertEqual(en.nextTransition(d("2026-11-20 23:50")), d("2026-11-21 00:00"))
+    }
+
+    func testOldStateWithoutForcedLockDayStillDecodes() throws {
+        // Zustand, wie ihn frühere App-Versionen gespeichert haben: ohne `forcedLockDay`.
+        let old = """
+        {"unlockUntilUnix":123,"masterUnlockUntilUnix":0,"forcedLock":true,"pinFailuresToday":2,"pinFailureDay":"2026-11-20",
+         "usageDay":"2026-11-20","usageMinutesToday":45,"penaltyUntilUnix":0,"penaltyCount":1,"executedCommandIds":["a","b"],
+         "lastLocked":true,"lastReason":"x"}
+        """
+        let s = try JSONDecoder().decode(RuntimeState.self, from: Data(old.utf8))
+        XCTAssertEqual(s.forcedLockDay, "")
+        XCTAssertTrue(s.forcedLock)
+        XCTAssertEqual(s.unlockUntilUnix, 123)
+        XCTAssertEqual(s.usageMinutesToday, 45)
+        XCTAssertEqual(s.executedCommandIds, ["a", "b"])
+        XCTAssertNil(s.shared)
+        // Sogar ein leeres Objekt lädt (alle Felder mit Standardwert).
+        XCTAssertEqual(try JSONDecoder().decode(RuntimeState.self, from: Data("{}".utf8)), RuntimeState())
+        // Neuer Zustand mit Tag überlebt Speichern/Laden.
+        var n = RuntimeState(); n.forcedLock = true; n.forcedLockDay = "2026-11-20"
+        XCTAssertEqual(try JSONDecoder().decode(RuntimeState.self, from: JSONEncoder().encode(n)), n)
     }
 
     func testSharedDailyAccount() {

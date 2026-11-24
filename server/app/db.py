@@ -125,6 +125,9 @@ MIGRATIONS = [
     "ALTER TABLE devices ADD COLUMN exempt_minutes INTEGER DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN exempt_detail TEXT",
     "ALTER TABLE usage_daily ADD COLUMN exempt_minutes INTEGER DEFAULT 0",
+    # Offene „Sofort sperren"-Sperre der Eltern: Tag (yyyy-MM-dd, Berlin), an dem sie gesetzt wurde.
+    # Leer/NULL = keine offene Eltern-Sofortsperre. Der Server beendet sie mit dem nächsten Tag (alte Apps).
+    "ALTER TABLE devices ADD COLUMN parent_lock_day TEXT",
 ]
 
 
@@ -172,10 +175,14 @@ def query_one(sql: str, params: tuple = ()):
         return _conn.execute(sql, params).fetchone()
 
 
-def audit(actor: str, action: str, device_id: str | None = None, detail: str = "") -> None:
+def audit(actor: str, action: str, device_id: str | None = None, detail: str = "", c=None) -> None:
+    """Protokollzeile schreiben. Innerhalb einer offenen `tx()` die Verbindung als `c` mitgeben –
+    sonst würde eine zweite `tx()` an der (nicht wiedereintrittsfähigen) Sperre hängen bleiben."""
     import time
-    with tx() as c:
-        c.execute(
-            "INSERT INTO audit(ts, actor, device_id, action, detail) VALUES (?,?,?,?,?)",
-            (int(time.time()), actor, device_id, action, detail),
-        )
+    row = (int(time.time()), actor, device_id, action, detail)
+    sql = "INSERT INTO audit(ts, actor, device_id, action, detail) VALUES (?,?,?,?,?)"
+    if c is not None:
+        c.execute(sql, row)
+        return
+    with tx() as conn:
+        conn.execute(sql, row)

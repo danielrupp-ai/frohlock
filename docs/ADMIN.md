@@ -58,7 +58,7 @@ Admin-Web: `http://localhost:8080/`  (Login mit `FROHLOCK_ADMIN_USER` / `FROHLOC
 | Aktion            | Wirkung |
 |-------------------|---------|
 | **Entsperren**    | temporär für n Minuten entsperren |
-| **Sofort sperren**| Entsperrung aufheben, sofort sperren |
+| **Sofort sperren**| Entsperrung aufheben, sofort sperren – gilt bis zum nächsten Tag (dann startet auch das Tageslimit neu) oder bis Entsperren/Eltern-PIN. Die strenge Sperre nach einem Löschversuch bleibt bis zur Freigabe durch Eltern. |
 | **PIN setzen**    | neuen PIN vergeben (neue signierte Config) |
 | **Sperrzeiten**   | Fenster hinzufügen/entfernen |
 | **Update**        | Self-Update auf die konfigurierte Version anstoßen |

@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from . import android, configbuilder, db, shared
 from .config import settings
 from .security import pin_hash, verify_password
-from .signing import CMD, sign_command
+from .signing import sign_command
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -526,11 +526,14 @@ def enqueue_command(request: Request, device_id: str,
                 # Noch nicht zugestellte Auszeiten gleich mit zurücknehmen.
                 c.execute("UPDATE commands SET acked=1 WHERE device_id=? AND type=? AND acked=0",
                           (device_id, TIMEOUT_TYPE))
-            c.execute(
-                """INSERT INTO commands(id, device_id, type, payload_json, issued_at, expires_at, created_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (signed["commandId"], device_id, CMD[ctype], json.dumps(signed), now, now + expires_in, now),
-            )
+            from .api import insert_command
+            insert_command(c, device_id, ctype, signed, expires_in, now)
+            # „Sofort sperren" endet mit dem nächsten Tageswechsel (Server entsperrt alte Apps dann selbst).
+            if ctype == "lock":
+                c.execute("UPDATE devices SET parent_lock_day=? WHERE id=?",
+                          (_berlin_now().strftime("%Y-%m-%d"), device_id))
+            elif ctype == "unlock":
+                c.execute("UPDATE devices SET parent_lock_day=NULL WHERE id=?", (device_id,))
         db.audit(request.session["admin_user"], f"cmd:{ctype}", device_id, f"{minutes} min" if ctype == "timeout" else "")
         flash = {"timeout": "auszeit", "clearTimeout": "aufgehoben"}.get(ctype, "")
     target = "/admin" if back == "dashboard" else f"/admin/devices/{device_id}"

@@ -8,10 +8,15 @@ import java.time.LocalDate
 class RuntimeState {
     var unlockUntilUnix = 0L
     var masterUnlockUntilUnix = 0L
-    /** „Sofort sperren" der Eltern: gilt bis Eltern-PIN, Fern-Entsperren oder Master-PIN. */
+    /**
+     * „Sofort sperren" der Eltern: gilt bis Eltern-PIN, Fern-Entsperren, Master-PIN – oder bis zum nächsten Tageswechsel.
+     * Eine Sperre mit eigenem Text (Löschversuch) endet NICHT von selbst, nur durch Eltern.
+     */
     var forcedLock = false
-    /** Eigener Text der Sofortsperre (z. B. nach einem Löschversuch); leer = Standardtext. */
+    /** Eigener Text der Sofortsperre (z. B. nach einem Löschversuch); leer = Standardtext (Eltern-Sperre). */
     var forcedLockMessage = ""
+    /** Tag (yyyy-MM-dd, Vertrauenszeit), an dem die Eltern-Sofortsperre gesetzt wurde; leer = unbekannt/keine. */
+    var forcedLockDay = ""
     var pinFailuresToday = 0
     var pinFailureDay = ""
 
@@ -140,6 +145,7 @@ class RuntimeState {
         .put("masterUnlockUntilUnix", masterUnlockUntilUnix)
         .put("forcedLock", forcedLock)
         .put("forcedLockMessage", forcedLockMessage)
+        .put("forcedLockDay", forcedLockDay)
         .put("pinFailuresToday", pinFailuresToday)
         .put("pinFailureDay", pinFailureDay)
         .put("usageDay", usageDay)
@@ -174,6 +180,7 @@ class RuntimeState {
             masterUnlockUntilUnix = o.optLong("masterUnlockUntilUnix")
             forcedLock = o.optBoolean("forcedLock")
             forcedLockMessage = o.optString("forcedLockMessage", "")
+            forcedLockDay = o.optString("forcedLockDay", "")
             pinFailuresToday = o.optInt("pinFailuresToday")
             pinFailureDay = o.optString("pinFailureDay", "")
             usageDay = o.optString("usageDay", "")

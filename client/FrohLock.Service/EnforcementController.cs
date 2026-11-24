@@ -269,9 +269,30 @@ public sealed class EnforcementController
             // „Sofort sperren" der Eltern: sperrt unabhängig von Uhrzeit und Tageslimit.
             // Nur eine Sperre der Eltern (Fernbefehl) erlaubt das Ausnahme-Programm – eine angeforderte
             // Sperre (Manipulation) nie.
+            // Die Sperre der Eltern endet mit dem nächsten Tageswechsel (dann startet auch das Tageslimit neu);
+            // eine strenge Sperre (Manipulation) bleibt bis zur Freigabe durch Eltern.
+            var forcedToday = _clock.UtcNow.ToLocalTime().ToString("yyyy-MM-dd");
+            switch (ForcedLockPolicy.Check(_state.ForcedLock, _state.ForcedLockByParents, _state.ForcedLockDay, forcedToday))
+            {
+                case ForcedLockStep.StampToday:
+                    _state.ForcedLockDay = forcedToday;
+                    _state.Save();
+                    break;
+                case ForcedLockStep.Expire:
+                    var lockedOn = _state.ForcedLockDay;
+                    _state.ForcedLock = false;
+                    _state.ForcedLockByParents = false;
+                    _state.ForcedLockDay = "";
+                    _state.Save();
+                    _audit.Write("LOCK", $"Sofortsperre endet mit dem neuen Tag (gesperrt am {lockedOn})");
+                    break;
+            }
+
             if (_state.ForcedLock)
-                return LockDecision.Locked("Mama oder Papa haben den Laptop gerade gesperrt. 💛",
-                    _state.ForcedLockByParents ? LockKind.ParentLock : LockKind.Tamper);
+                return _state.ForcedLockByParents
+                    ? LockDecision.Locked("Mama oder Papa haben den Laptop für heute gesperrt. Morgen geht es weiter. 💛",
+                        LockKind.ParentLock)
+                    : LockDecision.Locked("Mama oder Papa haben den Laptop gerade gesperrt. 💛", LockKind.Tamper);
 
             var utc = _clock.UtcNow;
             var age = _clock.Age;
@@ -522,6 +543,7 @@ public sealed class EnforcementController
                 _state.UnlockUntilUnix = _state.MasterUnlockUntilUnix;
                 _state.ForcedLock = false;
                 _state.ForcedLockByParents = false;
+                _state.ForcedLockDay = "";
                 _state.PinFailuresToday = 0;
                 _state.PenaltySecondsRemaining = 0;
                 _state.PenaltyCount = 0;
@@ -547,6 +569,7 @@ public sealed class EnforcementController
                 if (_state.ForcedLock) _audit.Write("LOCK", "Sofortsperre durch Eltern-PIN aufgehoben");
                 _state.ForcedLock = false;
                 _state.ForcedLockByParents = false;
+                _state.ForcedLockDay = "";
                 if (_state.PenaltySecondsRemaining > 0) _audit.Write("AUSZEIT", "Durch Eltern-PIN aufgehoben");
                 _state.PenaltySecondsRemaining = 0;
                 _state.PenaltyCount = 0;
@@ -681,9 +704,12 @@ public sealed class EnforcementController
             _state.MasterUnlockUntilUnix = 0; // auch die Master-Entsperrung beenden (Admin gewinnt)
             // Eine strenge Sperre (Manipulation) wird durch eine spätere Eltern-Sperre nicht gelockert.
             _state.ForcedLockByParents = byParents && (!_state.ForcedLock || _state.ForcedLockByParents);
-            _state.ForcedLock = true;          // bleibt gesperrt, bis Eltern freigeben
+            _state.ForcedLock = true;          // Eltern-Sperre: bis Tageswechsel/Freigabe; strenge Sperre: bis Freigabe
+            _state.ForcedLockDay = _clock.UtcNow.ToLocalTime().ToString("yyyy-MM-dd");
             _state.Save();
-            _audit.Write("LOCK", $"Sofortsperre: {reason} – gesperrt bis zur Freigabe durch Eltern");
+            _audit.Write("LOCK", _state.ForcedLockByParents
+                ? $"Sofortsperre: {reason} – gesperrt bis zum Tageswechsel oder bis zur Freigabe durch Eltern"
+                : $"Sofortsperre: {reason} – gesperrt bis zur Freigabe durch Eltern");
         }
     }
 
@@ -718,6 +744,7 @@ public sealed class EnforcementController
             _state.UnlockUntilUnix = new DateTimeOffset(until).ToUnixTimeSeconds();
             _state.ForcedLock = false;            // Fern-Entsperren hebt auch die Sofortsperre auf
             _state.ForcedLockByParents = false;
+            _state.ForcedLockDay = "";
             _state.PenaltySecondsRemaining = 0;   // Eltern entsperren -> Auszeit ist mit erledigt
             _state.PenaltyCount = 0;
             _state.PenaltyTotalMinutes = 0;

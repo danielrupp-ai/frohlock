@@ -78,6 +78,7 @@ class Enforcer(
     @Volatile var guardIncomplete: String? = null
 
     fun decide(): Decision = synchronized(lock) {
+        expireForcedLock()
         val d = decideBase()
         val c = config
         if (c == null || !c.hasPin || masterActive()) d else PenaltyPolicy.apply(d, state.penaltySecondsRemaining)
@@ -89,7 +90,7 @@ class Enforcer(
         val e = engine
         // Vor der Einrichtung NIE sperren – sonst wäre man ohne PIN ausgesperrt.
         if (c == null || e == null || !c.hasPin) return Decision.unlocked("Noch nicht eingerichtet")
-        if (state.forcedLock) return Decision.locked(state.forcedLockMessage.ifBlank { "Mama oder Papa haben $deviceWord gerade gesperrt. 💛" })
+        if (state.forcedLock) return Decision.locked(state.forcedLockMessage.ifBlank { "Mama oder Papa haben $deviceWord für heute gesperrt. Morgen geht es weiter. 💛" })
 
         val now = localNow()
         val unlockUntil = if (state.unlockUntilUnix > 0) toLocal(state.unlockUntilUnix) else null
@@ -137,6 +138,7 @@ class Enforcer(
             state.unlockUntilUnix = state.masterUnlockUntilUnix
             state.forcedLock = false
             state.forcedLockMessage = ""
+            state.forcedLockDay = ""
             state.pinFailuresToday = 0
             state.clearPenalty()
             save()
@@ -149,6 +151,7 @@ class Enforcer(
         if (state.forcedLock) audit.write("LOCK", "Sofortsperre durch Eltern-PIN aufgehoben")
         state.forcedLock = false
         state.forcedLockMessage = ""
+        state.forcedLockDay = ""
         if (state.penaltySecondsRemaining > 0) audit.write("AUSZEIT", "Durch Eltern-PIN aufgehoben")
         state.clearPenalty()
         save()
@@ -175,16 +178,47 @@ class Enforcer(
     fun forceLock(reason: String, message: String = "") = synchronized(lock) {
         state.unlockUntilUnix = 0
         state.masterUnlockUntilUnix = 0
+        // Eine strenge Sperre (Löschversuch, eigener Text) wird durch ein späteres „Sofort sperren“ der Eltern
+        // nicht gelockert – sonst liefe sie mit dem Tageswechsel ab.
+        val strict = message.isNotEmpty() || (state.forcedLock && state.forcedLockMessage.isNotEmpty())
+        if (message.isNotEmpty() || !strict) state.forcedLockMessage = message
         state.forcedLock = true
-        state.forcedLockMessage = message
+        state.forcedLockDay = localNow().toLocalDate().toString()
         save()
-        audit.write("LOCK", "Sofortsperre: $reason – gesperrt bis zur Freigabe durch Eltern")
+        // Eltern-Sperre (ohne eigenen Text) endet mit dem Tageswechsel; eine Sperre mit eigenem Text (Löschversuch) nicht.
+        val until = if (!strict) "gesperrt bis zum Tageswechsel oder bis zur Freigabe durch Eltern"
+            else "gesperrt bis zur Freigabe durch Eltern"
+        audit.write("LOCK", "Sofortsperre: $reason – $until")
+    }
+
+    /**
+     * Eltern-Sofortsperre (ohne eigenen Text) endet mit dem nächsten Tageswechsel – dann startet auch das Tageslimit neu.
+     * Eine Sperre mit eigenem Text (Löschversuch) bleibt bis zur Freigabe durch Eltern. Läuft am Anfang von [decide].
+     * Eine ältere Sperre ohne Tag (aus früherer App-Version) bekommt den heutigen Tag und läuft zum nächsten Tageswechsel ab.
+     * Steht die Uhr hinter dem Sperrtag (zurückgedreht), bleibt die Sperre – String-Vergleich der ISO-Daten.
+     */
+    private fun expireForcedLock() {
+        if (!state.forcedLock || state.forcedLockMessage.isNotEmpty()) return
+        val today = localNow().toLocalDate().toString()
+        if (state.forcedLockDay.isEmpty()) {
+            state.forcedLockDay = today
+            save()
+            return
+        }
+        if (today > state.forcedLockDay) {
+            val since = state.forcedLockDay
+            state.forcedLock = false
+            state.forcedLockDay = ""
+            save()
+            audit.write("LOCK", "Sofortsperre endet mit dem neuen Tag (gesperrt am $since)")
+        }
     }
 
     fun remoteUnlock(minutes: Int, reason: String) = synchronized(lock) {
         state.unlockUntilUnix = nowUnix() + minutes.coerceAtLeast(1) * 60L
         state.forcedLock = false
         state.forcedLockMessage = ""
+        state.forcedLockDay = ""
         state.clearPenalty()
         save()
         audit.write("UNLOCK", "Entsperrt für $minutes min: $reason")

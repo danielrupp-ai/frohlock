@@ -453,8 +453,8 @@
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
         <input type="hidden" name="kind" value="lock"><button class="secondary" type="submit">Sofort sperren</button>
       </form>
-      <p class="muted" style="flex-basis:100%;margin:4px 0 0">„Sofort sperren" {% if not is_android %}gilt ab Version 0.23 sofort und {% endif %}bleibt bestehen,
-        bis Sie „Entsperren" tippen oder am {% if is_android %}Handy{% else %}Laptop{% endif %} den Eltern-PIN eingeben.</p>
+      <p class="muted" style="flex-basis:100%;margin:4px 0 0">„Sofort sperren" gilt sofort und endet von selbst mit dem nächsten Tag – dann startet auch das Tageslimit neu.
+        Früher endet es, wenn Sie „Entsperren" tippen oder am {% if is_android %}Handy{% elif is_ios %}iPhone{% else %}Laptop{% endif %} den Eltern-PIN eingeben.</p>
       <form class="inline" method="post" action="/admin/devices/{{ dev['id'] }}/command">
         <input type="hidden" name="kind" value="update"><button class="secondary" type="submit">Update</button>
       </form>

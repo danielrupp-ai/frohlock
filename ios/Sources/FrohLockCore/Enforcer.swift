@@ -4,8 +4,10 @@ import Foundation
 public struct RuntimeState: Codable, Equatable, Sendable {
     public var unlockUntilUnix: Int64 = 0
     public var masterUnlockUntilUnix: Int64 = 0
-    /// „Sofort sperren" der Eltern: gilt bis Eltern-PIN, Fern-Entsperren oder Master-PIN.
+    /// „Sofort sperren" der Eltern: gilt bis Eltern-PIN, Fern-Entsperren oder Master-PIN – spätestens bis zum nächsten Tageswechsel.
     public var forcedLock = false
+    /// Tag (yyyy-MM-dd), an dem die Sofortsperre gesetzt wurde. Leer = unbekannt (alter Zustand) → beim nächsten Aufräumen auf heute gestempelt.
+    public var forcedLockDay = ""
     public var pinFailuresToday = 0
     public var pinFailureDay = ""
     /// Eigene Bildschirmzeit heute (iOS meldet sie in 5-Minuten-Schritten über Bildschirmzeit-Ereignisse).
@@ -22,6 +24,26 @@ public struct RuntimeState: Codable, Equatable, Sendable {
     public var lastReason = ""
 
     public init() {}
+
+    /// Toleranter Decoder: Zustand aus älteren Versionen (ohne neue Felder) muss weiter laden –
+    /// sonst fiele `Store.state()` auf einen leeren Zustand zurück und Entsperrung/Nutzung/Auszeit gingen verloren.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        unlockUntilUnix = try c.decodeIfPresent(Int64.self, forKey: .unlockUntilUnix) ?? 0
+        masterUnlockUntilUnix = try c.decodeIfPresent(Int64.self, forKey: .masterUnlockUntilUnix) ?? 0
+        forcedLock = try c.decodeIfPresent(Bool.self, forKey: .forcedLock) ?? false
+        forcedLockDay = try c.decodeIfPresent(String.self, forKey: .forcedLockDay) ?? ""
+        pinFailuresToday = try c.decodeIfPresent(Int.self, forKey: .pinFailuresToday) ?? 0
+        pinFailureDay = try c.decodeIfPresent(String.self, forKey: .pinFailureDay) ?? ""
+        usageDay = try c.decodeIfPresent(String.self, forKey: .usageDay) ?? ""
+        usageMinutesToday = try c.decodeIfPresent(Int.self, forKey: .usageMinutesToday) ?? 0
+        shared = try c.decodeIfPresent(SharedUsage.self, forKey: .shared)
+        penaltyUntilUnix = try c.decodeIfPresent(Int64.self, forKey: .penaltyUntilUnix) ?? 0
+        penaltyCount = try c.decodeIfPresent(Int.self, forKey: .penaltyCount) ?? 0
+        executedCommandIds = try c.decodeIfPresent([String].self, forKey: .executedCommandIds) ?? []
+        lastLocked = try c.decodeIfPresent(Bool.self, forKey: .lastLocked) ?? false
+        lastReason = try c.decodeIfPresent(String.self, forKey: .lastReason) ?? ""
+    }
 
     public mutating func markExecuted(_ id: String) -> Bool {
         if id.isEmpty { return true }
@@ -43,7 +65,7 @@ public struct RuntimeState: Codable, Equatable, Sendable {
     public func budgetUsed(_ day: String) -> Int { ownMinutes(day) + otherMinutes(day) }
 }
 
-/// Sperr-Gehirn – Port von Enforcer.kt. Reihenfolge: Master > nicht eingerichtet > Sofortsperre >
+/// Sperr-Gehirn – Port von Enforcer.kt. Reihenfolge: Master > nicht eingerichtet > Sofortsperre (nur bis zum Tageswechsel) >
 /// Zeitplan/Entsperrung > Tageslimit > Auszeit. Reine Logik: Zustand rein, Entscheidung raus.
 public struct Enforcer {
     public static let maxPinFailures = 8
@@ -63,7 +85,11 @@ public struct Enforcer {
     public func decide(_ now: Date) -> Decision {
         if state.masterUnlockUntilUnix > unix(now) { return .unlocked("Master-Entsperrung aktiv") }
         guard let c = config, c.hasPin else { return .unlocked("Noch nicht eingerichtet") }
-        if state.forcedLock { return .locked("Mama oder Papa haben das iPhone gerade gesperrt. 💛") }
+        // Sofortsperre gilt nur bis zum Tageswechsel – rein lesend, auch bevor `expireForcedLock` den Zustand bereinigt hat.
+        // Leerer Tag (alter Zustand) zählt als „heute gesetzt"; zurückgedrehte Uhr (heute < Setz-Tag) bleibt gesperrt.
+        if state.forcedLock && (state.forcedLockDay.isEmpty || clock.dayKey(now) <= state.forcedLockDay) {
+            return .locked("Mama oder Papa haben das iPhone für heute gesperrt. Morgen geht es weiter. 💛")
+        }
         let unlockUntil = state.unlockUntilUnix > 0 ? date(state.unlockUntilUnix) : nil
         let engine = ScheduleEngine(config: c, clock: clock)
         let base = engine.decide(now, unlockUntil: unlockUntil)
@@ -80,7 +106,7 @@ public struct Enforcer {
     }
 
     /// Wann ändert sich die Entscheidung frühestens von selbst? (Entsperrung/Auszeit endet, Sperrzeit beginnt/endet,
-    /// Mitternacht.) iOS weckt FrohLock zu diesem Zeitpunkt über einen Bildschirmzeit-Zeitplan.
+    /// Mitternacht – dann endet auch die Sofortsperre.) iOS weckt FrohLock zu diesem Zeitpunkt über einen Bildschirmzeit-Zeitplan.
     public func nextTransition(_ now: Date) -> Date? {
         var cands: [Date] = []
         for u in [state.unlockUntilUnix, state.penaltyUntilUnix, state.masterUnlockUntilUnix] where u > unix(now) {
@@ -114,7 +140,7 @@ public struct Enforcer {
         if MasterPin.isMaster(pin) {
             state.masterUnlockUntilUnix = unix(now) + 8 * 3600
             state.unlockUntilUnix = state.masterUnlockUntilUnix
-            state.forcedLock = false; state.penaltyUntilUnix = 0; state.penaltyCount = 0; state.pinFailuresToday = 0
+            state.forcedLock = false; state.forcedLockDay = ""; state.penaltyUntilUnix = 0; state.penaltyCount = 0; state.pinFailuresToday = 0
             return .master
         }
         guard let c = config, c.hasPin else { return .blocked }
@@ -126,7 +152,7 @@ public struct Enforcer {
             return .wrong(remaining: max(0, Self.maxPinFailures - state.pinFailuresToday))
         }
         state.unlockUntilUnix = unix(now) + Int64(max(1, minutes ?? c.unlockGraceMinutes)) * 60
-        state.forcedLock = false; state.penaltyUntilUnix = 0; state.penaltyCount = 0
+        state.forcedLock = false; state.forcedLockDay = ""; state.penaltyUntilUnix = 0; state.penaltyCount = 0
         return .ok
     }
 
@@ -134,11 +160,27 @@ public struct Enforcer {
 
     // ---------- Fernbefehle ----------
 
-    public mutating func forceLock() { state.unlockUntilUnix = 0; state.masterUnlockUntilUnix = 0; state.forcedLock = true }
+    /// Sofortsperre der Eltern: gilt bis PIN/Fern-Entsperren, endet aber spätestens mit dem nächsten Tageswechsel.
+    public mutating func forceLock(now: Date) {
+        state.unlockUntilUnix = 0; state.masterUnlockUntilUnix = 0
+        state.forcedLock = true; state.forcedLockDay = clock.dayKey(now)
+    }
+
+    /// Räumt eine abgelaufene Sofortsperre auf (neuer Tag). `decide` bleibt rein lesend und wertet den Tag selbst richtig aus;
+    /// diese Methode bringt den gespeicherten Zustand nach. true = Zustand geändert → speichern.
+    /// - Sofortsperre ohne Tag (alter Zustand): auf heute stempeln, sie läuft dann mit dem nächsten Tageswechsel ab.
+    /// - Heute ist ein späterer Tag als der Setz-Tag: Sperre beenden. Zurückgedrehte Uhr: nichts tun (bleibt gesperrt).
+    public mutating func expireForcedLock(now: Date) -> Bool {
+        guard state.forcedLock else { return false }
+        let today = clock.dayKey(now)
+        if state.forcedLockDay.isEmpty { state.forcedLockDay = today; return true }
+        if today > state.forcedLockDay { state.forcedLock = false; state.forcedLockDay = ""; return true }
+        return false
+    }
 
     public mutating func remoteUnlock(minutes: Int, now: Date) {
         state.unlockUntilUnix = unix(now) + Int64(max(1, minutes)) * 60
-        state.forcedLock = false; state.penaltyUntilUnix = 0; state.penaltyCount = 0
+        state.forcedLock = false; state.forcedLockDay = ""; state.penaltyUntilUnix = 0; state.penaltyCount = 0
     }
 
     public mutating func addPenalty(minutes: Int, now: Date) {

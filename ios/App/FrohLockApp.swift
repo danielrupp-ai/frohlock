@@ -439,7 +439,7 @@ struct ParentPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Eltern-Bereich (5 Min offen)").font(.headline)
-            Button("🔒 Jetzt sperren") { m.parentAction({ $0.forceLock() }, "Eltern: sofort sperren") }
+            Button("🔒 Jetzt sperren") { m.parentAction({ $0.forceLock(now: Date()) }, "Eltern: sofort sperren") }
             Button("⏹ Entsperrung beenden") { m.parentAction({ $0.endUnlock() }, "Eltern: Entsperrung beendet") }
             NavigationLink("📱 Apps-Auswahl ändern") { SelectionView(firstRun: false) }
             Button("🔄 Jetzt abgleichen") { m.refresh(sync: true) }

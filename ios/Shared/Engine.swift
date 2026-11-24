@@ -29,6 +29,9 @@ enum Engine {
     @discardableResult
     static func evaluate(now: Date = Date(), source: String) -> Decision {
         let d = Store.update { e -> Decision in
+            // Sofortsperre endet mit dem neuen Tag (Zustand bereinigen; Store.update speichert). Nur ein echtes Ende ins Protokoll,
+            // nicht das Stempeln einer alten Sperre ohne Tag.
+            if e.expireForcedLock(now: now), !e.state.forcedLock { Audit.write("LOCK", "Sofortsperre endet mit dem neuen Tag [\(source)]") }
             let d = e.decide(now)
             if d.locked != e.state.lastLocked {
                 Audit.write("LOCK", (d.locked ? "Gesperrt: " : "Entsperrt: ") + d.reason + " [\(source)]")
@@ -175,7 +178,7 @@ enum Engine {
             switch cmd.type {
             case CommandType.unlock:
                 Store.update { $0.remoteUnlock(minutes: cmd.unlockMinutes ?? ($0.config?.unlockGraceMinutes ?? 60), now: now) }
-            case CommandType.lock: Store.update { $0.forceLock() }
+            case CommandType.lock: Store.update { $0.forceLock(now: now) }
             case CommandType.timeout: Store.update { $0.addPenalty(minutes: cmd.unlockMinutes ?? 15, now: now) }
             case CommandType.clearTimeout: Store.update { $0.clearPenalty() }
             case CommandType.updateConfig, CommandType.resetPin: try? fetchConfig(api)

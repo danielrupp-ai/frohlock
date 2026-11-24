@@ -12,8 +12,16 @@ public sealed class RuntimeState
     public long ConfigVersion { get; set; }
     public long UnlockUntilUnix { get; set; }   // aktive Entsperrung (Vertrauenszeit), 0 = keine
     public long MasterUnlockUntilUnix { get; set; }  // Master-PIN-Override (überschreibt ALLES), 0 = keine
-    /// <summary>„Sofort sperren" der Eltern: gilt, bis Eltern-PIN, Fern-Entsperren oder Master-PIN freigeben.</summary>
+    /// <summary>
+    /// „Sofort sperren": Eltern-Sperre gilt bis zum nächsten Tageswechsel oder bis Eltern-PIN, Fern-Entsperren oder
+    /// Master-PIN freigeben; eine strenge Sperre (Manipulation) nur bis zur Freigabe durch Eltern.
+    /// </summary>
     public bool ForcedLock { get; set; }
+    /// <summary>
+    /// Tag (yyyy-MM-dd, Vertrauenszeit, lokal), an dem die Sofortsperre gesetzt wurde. Leer = keine oder aus einer
+    /// älteren Version (dann wird der heutige Tag eingetragen, die Sperre läuft zum nächsten Tageswechsel ab).
+    /// </summary>
+    public string ForcedLockDay { get; set; } = "";
     /// <summary>
     /// Kam die Sofortsperre von den Eltern (Fernbefehl)? Nur dann darf der Sperrbildschirm ein Ausnahme-Programm
     /// anbieten. Fehlt der Wert (alter Zustand) = false = streng.

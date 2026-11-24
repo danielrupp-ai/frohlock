@@ -897,3 +897,196 @@ def test_windows_program_exception_evoluzzer(client):
     # Entfernen.
     client.post(f"/admin/devices/{laptop}/program-exceptions", data={"mode_0": "beides", "del_0": "on"})
     assert cfg(laptop, la)["appExceptions"] == []
+
+
+# ---- „Sofort sperren" endet mit dem nächsten Tag (Server entsperrt alte Apps nach dem Tageswechsel) ----
+
+PARENT_REASON = "Mama oder Papa haben das Handy gerade gesperrt. 💛"
+
+
+def _parent_lock_day(device_id):
+    import app.db as dbmod
+    return dbmod.query_one("SELECT parent_lock_day FROM devices WHERE id=?", (device_id,))["parent_lock_day"]
+
+
+def _next_day(day):
+    import datetime
+    return (datetime.date.fromisoformat(day) + datetime.timedelta(days=1)).isoformat()
+
+
+def _unlock_rows(device_id):
+    import app.db as dbmod
+    return dbmod.query("SELECT * FROM commands WHERE device_id=? AND type=0 ORDER BY created_at", (device_id,))
+
+
+def _heartbeat(client, device_id, auth, day, locked, reason="", **extra):
+    hb = {"deviceId": device_id, "appVersion": "0.31.0.0", "usageDay": day,
+          "currentlyLocked": locked, "lockReason": reason, **extra}
+    r = client.post(f"/devices/{device_id}/heartbeat", headers=auth, json=hb)
+    assert r.status_code == 200
+    return r
+
+
+def test_parent_lock_ends_with_new_day_by_one_minute_unlock(client):
+    import json as _json
+    import time as _time
+    with open(PUB_PATH, "rb") as fh:
+        pub = load_pem_public_key(fh.read())
+    _admin_login(client)
+    dev, auth = _pair(client, "Sperr-Laptop")
+
+    # Noch keine Eltern-Sperre -> nichts zu tun, auch bei neuem Tag.
+    assert _parent_lock_day(dev) is None
+    _heartbeat(client, dev, auth, "2030-01-01", True, PARENT_REASON)
+    assert _unlock_rows(dev) == []
+
+    # (a) Admin sperrt -> Tag gemerkt (Berlin, yyyy-MM-dd); Befehl „lock" liegt in der Warteschlange.
+    r = client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+    assert r.status_code == 303
+    day = _parent_lock_day(dev)
+    import app.admin as adminmod
+    assert day == adminmod._berlin_now().strftime("%Y-%m-%d")
+    import app.db as dbmod
+    assert len(dbmod.query("SELECT 1 FROM commands WHERE device_id=? AND type=1", (dev,))) == 1
+
+    # Heartbeat am selben Tag (gesperrt mit Eltern-Text) -> kein neuer Befehl, Merkung bleibt.
+    _heartbeat(client, dev, auth, day, True, PARENT_REASON)
+    assert _unlock_rows(dev) == [] and _parent_lock_day(dev) == day
+    # Auch ein leerer Tag (altes Gerät ohne Angabe) ändert nichts.
+    _heartbeat(client, dev, auth, "", True, PARENT_REASON)
+    assert _unlock_rows(dev) == [] and _parent_lock_day(dev) == day
+    # Ein früherer Tag am Gerät (Uhr/Zeitzone hinkt) ebenfalls nicht.
+    _heartbeat(client, dev, auth, "2000-01-01", True, PARENT_REASON)
+    assert _unlock_rows(dev) == [] and _parent_lock_day(dev) == day
+
+    # (b) Neuer Tag am Gerät, noch mit Eltern-Grund gesperrt -> genau EIN Unlock mit 1 Minute.
+    tomorrow = _next_day(day)
+    t0 = int(_time.time())
+    _heartbeat(client, dev, auth, tomorrow, True, PARENT_REASON)
+    rows = _unlock_rows(dev)
+    assert len(rows) == 1 and _parent_lock_day(dev) is None
+    body = _json.loads(base64.b64decode(_json.loads(rows[0]["payload_json"])["envelope"]["payloadBase64"]))
+    assert body["type"] == 0 and body["unlockMinutes"] == 1 and body["deviceId"] == dev
+    assert 3500 < body["expiresAtUnix"] - t0 <= 3600 + 5 and rows[0]["acked"] == 0
+    # Das Gerät bekommt ihn mit gültiger Signatur ausgeliefert (kein Plattform-/Versions-Gate für Typ 0).
+    env = [e for e in client.get(f"/devices/{dev}/commands", headers=auth).json()
+           if _json.loads(base64.b64decode(e["payloadBase64"]))["type"] == 0]
+    assert len(env) == 1
+    assert _json.loads(_verify(pub, env[0]["payloadBase64"], env[0]["signatureBase64"]))["unlockMinutes"] == 1
+    audit = dbmod.query("SELECT * FROM audit WHERE device_id=? AND action='cmd:unlock'", (dev,))
+    assert len(audit) == 1 and audit[0]["actor"] == "automatik" and "Sofortsperre endet mit dem neuen Tag" in audit[0]["detail"]
+
+    # Zweiter Heartbeat (Gerät hat noch nicht quittiert) -> kein weiterer Befehl.
+    _heartbeat(client, dev, auth, tomorrow, True, PARENT_REASON)
+    _heartbeat(client, dev, auth, _next_day(tomorrow), True, PARENT_REASON)
+    assert len(_unlock_rows(dev)) == 1
+
+    # Die Geräteseite rendert mit dem neuen Hinweistext.
+    page = client.get(f"/admin/devices/{dev}").text
+    assert "endet von selbst mit dem nächsten Tag" in page and "startet auch das Tageslimit neu" in page
+    assert "bleibt bestehen" not in page
+
+
+def test_parent_lock_new_day_without_parent_reason_sends_nothing(client):
+    _admin_login(client)
+    dev, auth = _pair(client, "Sperr-Handy")
+    client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+    day = _parent_lock_day(dev)
+    assert day
+
+    # (c1) Neuer Tag, Gerät ist gar nicht (mehr) gesperrt -> nichts senden, Merkung leeren.
+    _heartbeat(client, dev, auth, _next_day(day), False, "")
+    assert _unlock_rows(dev) == [] and _parent_lock_day(dev) is None
+
+    # (c2) Neuer Tag, gesperrt aus anderem Grund (Tageslimit, Zeitplan, Löschversuch) -> nichts senden, Merkung leeren.
+    for reason in ("Tageslimit erreicht (74/60 min)", "Schlafenszeit", "Manipulationsversuch erkannt",
+                   "Mama oder Papa waren gerade beschäftigt"):
+        client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+        assert _parent_lock_day(dev) == day
+        _heartbeat(client, dev, auth, _next_day(day), True, reason)
+        assert _parent_lock_day(dev) is None
+    # Nur der letzte Grund beginnt NICHT mit „Mama oder Papa haben" – also nirgends ein Unlock.
+    assert _unlock_rows(dev) == []
+
+
+def test_parent_lock_cleared_by_admin_unlock_and_works_on_android_and_ios(client):
+    _admin_login(client)
+    dev, auth = _pair(client, "Sperr-Tablet")
+    client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+    assert _parent_lock_day(dev)
+    # (d) Admin entsperrt -> Merkung weg; ein späterer neuer Tag erzeugt nichts mehr.
+    client.post(f"/admin/devices/{dev}/command", data={"kind": "unlock", "minutes": "30"}, follow_redirects=False)
+    assert _parent_lock_day(dev) is None
+    assert len(_unlock_rows(dev)) == 1          # nur der Befehl des Admins
+    _heartbeat(client, dev, auth, "2099-01-01", True, PARENT_REASON)
+    assert len(_unlock_rows(dev)) == 1
+    # Andere Befehle lassen die Merkung unverändert.
+    client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+    day = _parent_lock_day(dev)
+    for kind in ("ping", "timeout", "cleartimeout", "update", "updateconfig"):
+        client.post(f"/admin/devices/{dev}/command", data={"kind": kind}, follow_redirects=False)
+        assert _parent_lock_day(dev) == day
+
+    # Android und iPhone verhalten sich gleich (Plattform kommt aus dem Heartbeat).
+    for platform, word in (("android", "Handy"), ("ios", "iPhone")):
+        d2, a2 = _pair(client, f"Gerät {platform}")
+        client.post(f"/admin/devices/{d2}/command", data={"kind": "lock"}, follow_redirects=False)
+        day2 = _parent_lock_day(d2)
+        reason = f"Mama oder Papa haben das {word} für heute gesperrt. Morgen geht es weiter. 💛"
+        _heartbeat(client, d2, a2, day2, True, reason, platform=platform, deviceOwner=True)
+        assert _unlock_rows(d2) == []
+        _heartbeat(client, d2, a2, _next_day(day2), True, reason, platform=platform, deviceOwner=True)
+        assert len(_unlock_rows(d2)) == 1 and _parent_lock_day(d2) is None
+        assert len(client.get(f"/devices/{d2}/commands", headers=a2).json()) >= 1
+        page = client.get(f"/admin/devices/{d2}").text
+        assert "endet von selbst mit dem nächsten Tag" in page and f"am {word} den Eltern-PIN" in page
+
+
+def test_parent_lock_error_does_not_break_heartbeat(client, monkeypatch):
+    import app.signing as signingmod
+    _admin_login(client)
+    dev, auth = _pair(client, "Sperr-Fehler")
+    client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+    day = _parent_lock_day(dev)
+
+    def boom(*a, **kw):
+        raise RuntimeError("Schlüssel fehlt")
+    monkeypatch.setattr(signingmod, "sign_command", boom)
+    # Heartbeat klappt trotzdem, der übrige Teil (z. B. Tagesverbrauch) wird gespeichert, Merkung bleibt zum Neuversuch.
+    _heartbeat(client, dev, auth, _next_day(day), True, PARENT_REASON, usageMinutesToday=12)
+    import app.db as dbmod
+    assert dbmod.query_one("SELECT usage_today FROM devices WHERE id=?", (dev,))["usage_today"] == 12
+    assert _parent_lock_day(dev) == day and _unlock_rows(dev) == []
+    monkeypatch.undo()
+    # Auch wenn das Einreihen selbst scheitert, wird das Leeren zurückgerollt (alles oder nichts) – Heartbeat bleibt heil.
+    import app.api as apimod
+
+    def boom_insert(*a, **kw):
+        raise RuntimeError("Einreihen kaputt")
+    monkeypatch.setattr(apimod, "insert_command", boom_insert)
+    _heartbeat(client, dev, auth, _next_day(day), True, PARENT_REASON, usageMinutesToday=13)
+    assert dbmod.query_one("SELECT usage_today FROM devices WHERE id=?", (dev,))["usage_today"] == 13
+    assert _parent_lock_day(dev) == day and _unlock_rows(dev) == []
+    monkeypatch.undo()
+    _heartbeat(client, dev, auth, _next_day(day), True, PARENT_REASON)
+    assert len(_unlock_rows(dev)) == 1 and _parent_lock_day(dev) is None
+
+
+def test_parent_lock_new_app_versions_get_no_server_unlock(client):
+    """Neue Apps beenden die Eltern-Sperre selbst. Melden sie am neuen Tag noch „Mama oder Papa haben …“,
+    ist es die strenge Sperre (Manipulation) – der Server hebt sie NICHT auf."""
+    _admin_login(client)
+    for platform, version, extra in (("", "0.32.0.0", {}), ("", "0.33.1", {}),
+                                     ("android", "1.0.13", {"platform": "android", "deviceOwner": False})):
+        dev, auth = _pair(client, f"Neu {platform or 'windows'} {version}")
+        client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+        day = _parent_lock_day(dev)
+        _heartbeat(client, dev, auth, _next_day(day), True, PARENT_REASON, **{"appVersion": version, **extra})
+        assert _unlock_rows(dev) == [] and _parent_lock_day(dev) is None
+    # Gegenprobe: Android 1.0.12 (alt) bekommt den Unlock.
+    dev, auth = _pair(client, "Alt android")
+    client.post(f"/admin/devices/{dev}/command", data={"kind": "lock"}, follow_redirects=False)
+    day = _parent_lock_day(dev)
+    _heartbeat(client, dev, auth, _next_day(day), True, PARENT_REASON,
+               appVersion="1.0.12", platform="android", deviceOwner=False)
+    assert len(_unlock_rows(dev)) == 1
